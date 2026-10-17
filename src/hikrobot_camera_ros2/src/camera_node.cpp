@@ -143,6 +143,15 @@ void CameraNode::declare_parameters()
   declare_parameter<std::string>("mock_image_path", "");
 
   declare_parameter<std::vector<std::string>>("sdk_lib_candidates", std::vector<std::string>{""});
+
+  // --- real camera (mvs backend) ---
+  declare_parameter<std::string>("mvs_serial_number", "");
+  declare_parameter<std::string>("mvs_pixel_format", "");
+  declare_parameter<int>("mvs_width", 0);
+  declare_parameter<int>("mvs_height", 0);
+  declare_parameter<double>("mvs_exposure_us", 0.0);
+  declare_parameter<double>("mvs_gain", 0.0);
+  declare_parameter<int>("mvs_packet_size", 0);
 }
 
 CameraNode::Config CameraNode::read_config()
@@ -178,8 +187,15 @@ CameraNode::Config CameraNode::read_config()
 
   const auto candidates = get_parameter("sdk_lib_candidates").as_string_array();
   for (const auto & candidate : candidates) {
-    if (!candidate.empty()) {config.sdk_lib_candidates.push_back(candidate);}
+    if (!candidate.empty()) {config.mvs.sdk_lib_candidates.push_back(candidate);}
   }
+  config.mvs.serial_number = get_parameter("mvs_serial_number").as_string();
+  config.mvs.pixel_format = get_parameter("mvs_pixel_format").as_string();
+  config.mvs.width = static_cast<int>(get_parameter("mvs_width").as_int());
+  config.mvs.height = static_cast<int>(get_parameter("mvs_height").as_int());
+  config.mvs.exposure_us = get_parameter("mvs_exposure_us").as_double();
+  config.mvs.gain = get_parameter("mvs_gain").as_double();
+  config.mvs.packet_size = static_cast<int>(get_parameter("mvs_packet_size").as_int());
   return config;
 }
 
@@ -209,7 +225,7 @@ std::unique_ptr<CameraBackend> CameraNode::make_backend()
   BackendRequest request;
   request.name = config_.backend;
   request.mock = config_.mock;
-  request.sdk_lib_candidates = config_.sdk_lib_candidates;
+  request.mvs = config_.mvs;
   try {
     auto backend = create_backend(request);
     backend->open();

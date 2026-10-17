@@ -1,0 +1,8 @@
+# Normalise line endings: this project targets Linux (ROS 2 on Ubuntu).
+* text=auto eol=lf
+*.sh text eol=lf
+*.py text eol=lf
+*.cpp text eol=lf
+*.hpp text eol=lf
+*.yaml text eol=lf
+*.md text eol=lf

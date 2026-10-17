@@ -10,6 +10,7 @@
 
 #include "hikrobot_camera_ros2/camera_backend.hpp"
 #include "hikrobot_camera_ros2/mock_backend.hpp"
+#include "hikrobot_camera_ros2/mvs_backend.hpp"
 
 namespace hikrobot_camera_ros2
 {
@@ -23,7 +24,7 @@ struct BackendRequest
 {
   std::string name;
   MockBackendOptions mock;
-  std::vector<std::string> sdk_lib_candidates;
+  MvsBackendOptions mvs;
 };
 
 /// @brief Registered backend names, sorted.

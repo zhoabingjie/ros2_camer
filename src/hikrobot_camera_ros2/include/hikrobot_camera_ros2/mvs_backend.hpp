@@ -47,10 +47,30 @@ struct MvsSdkProbe
 /// @brief Detect the Linux MVS SDK without loading anything.
 MvsSdkProbe probe_sdk(const std::vector<std::string> & extra_lib_candidates = {});
 
+/// @brief Construction parameters for the real camera.
+struct MvsBackendOptions
+{
+  std::vector<std::string> sdk_lib_candidates;
+
+  /// Empty = use the first enumerated device.
+  std::string serial_number;
+  /// Empty = leave the device's current pixel format (we convert to mono8/bgr8).
+  /// Any other value is written to the "PixelFormat" node by name, e.g. "Mono8".
+  std::string pixel_format;
+  /// 0 = leave the device's current value.
+  int width{0};
+  int height{0};
+  /// <= 0 = leave the device's current value (microseconds / dB).
+  double exposure_us{0.0};
+  double gain{0.0};
+  /// 0 = ask the SDK for the optimal GigE packet size.
+  int packet_size{0};
+};
+
 class MvsBackend : public CameraBackend
 {
 public:
-  explicit MvsBackend(std::vector<std::string> sdk_lib_candidates = {});
+  explicit MvsBackend(MvsBackendOptions options = MvsBackendOptions{});
 
   std::string name() const override {return "mvs";}
   bool requires_hardware() const override {return true;}
@@ -62,8 +82,11 @@ public:
   const MvsSdkProbe & probe() const;
 
 private:
-  std::vector<std::string> extra_candidates_;
+  MvsBackendOptions options_;
   mutable std::optional<MvsSdkProbe> probe_;
+  void * handle_{nullptr};
+  void * library_{nullptr};
+  std::vector<uint8_t> buffer_;
 };
 
 }  // namespace hikrobot_camera_ros2

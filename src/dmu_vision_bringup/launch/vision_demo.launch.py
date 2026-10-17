@@ -33,12 +33,21 @@ def generate_launch_description():
         get_package_share_directory("yolo_bringup"), "launch", "yolo.launch.py")
 
     default_scene = os.path.expanduser("~/vision_ws/models/demo_scene.jpg")
+    backend = LaunchConfiguration("backend")
     scene_image = LaunchConfiguration("scene_image")
     frame_id = LaunchConfiguration("frame_id")
     fps = LaunchConfiguration("fps")
 
     return LaunchDescription(
         [
+            DeclareLaunchArgument(
+                "backend",
+                default_value="mock",
+                description=(
+                    "'mock' replays the still image (works anywhere). 'mvs' uses the real "
+                    "Hikvision camera and requires the *Linux* MVS SDK -- see "
+                    "extras/docs/CAMERA_DRIVER.md."),
+            ),
             DeclareLaunchArgument(
                 "scene_image",
                 default_value=default_scene,
@@ -65,7 +74,7 @@ def generate_launch_description():
                 parameters=[
                     os.path.join(camera_share, "config", "camera.yaml"),
                     {
-                        "backend": "mock",
+                        "backend": backend,
                         "mock_image_path": scene_image,
                         "mock_width": 640,
                         "mock_height": 480,

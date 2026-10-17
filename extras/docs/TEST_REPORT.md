@@ -527,3 +527,110 @@ error_lines=0
 - 处置：临时停 `unattended-upgrades` → `apt-get clean` → 空闲回到 **2.1 GB**
 - 注意：`/media/asd` 显示 6.3 GB 是挂载的 **Ubuntu 安装 ISO**（`/dev/sr0`、`/dev/sr1`），
   不占根分区，`du /` 的总量会因此虚高
+
+
+### 14. T07 检测可视化 —— 人工目视确认通过（2026-10-17）
+
+用户在本机运行 `ros2 launch dmu_vision_bringup vision_demo.launch.py`，
+并在 `rqt_image_view` 中选择 `/yolo/cam0/debug_image`，**亲眼看到了带检测框的
+公交车 + 行人画面**。
+
+这让 T07 从"自动测量通过"升级为"**人工确认通过**"：
+
+| 判据 | 状态 |
+| --- | --- |
+| `/yolo/cam0/debug_image` 有数据 | ✅ 自动测量 6.59 Hz / 640×480 bgr8 |
+| 框与类别确实可见 | ✅ **用户目视确认** |
+| 启动日志无 ERROR | ✅ 用户提供的完整日志中 ERROR 0 次 |
+| `Activated` + `stream state -> ok` | ✅ |
+
+**仍未完成**：真实相机采集（T01/T02）与真实标定（T05 实测部分），
+两者都等待 Linux MVS SDK 与相机接入。
+
+
+---
+
+## Phase 1 真实相机接入 — 驱动已实现，等待硬件（2026-10-17）
+
+### 1. Linux MVS SDK 已安装（仅库 + 头文件）
+
+采用的是"只取所需"策略，不跑厂商的 `setup.sh`：
+
+```
+来源: MVS_Linux_STD_V5.0.2_260728.zip  ->  MVS-5.0.2_x86_64_20260728.tar.gz
+      ->  内层 MVS.tar.gz
+提取: 仅 lib/64 + lib/CLProtocol + include
+安装: /opt/MVS   (42 MB，未安装 MVS GUI / samples / docs / driver)
+链接: sudo ldconfig -n /opt/MVS/lib/64   (按 SDK 自己的 set_sdk_version.sh 方式重建 .so 链接)
+```
+
+关键文件实测存在：
+
+```
+/opt/MVS/lib/64/libMvCameraControl.so         -> libMvCameraControl.so.4.8.1.2
+/opt/MVS/lib/64/MvProducerGEV.cti             (GigE GenICam 传输层)
+/opt/MVS/include/MvCameraControl.h            (263 KB)
+/opt/MVS/include/CameraParams.h
+```
+
+### 2. 采集实现（`src/mvs_backend.cpp`，564 行）
+
+**设计要点：用 `dlopen` 动态加载，不硬链接。** 这样没装 SDK 的机器仍能编译并跑 mock，
+不会因为链接依赖而启动失败。
+
+| 步骤 | 使用的 API（全部来自真实头文件） |
+| --- | --- |
+| 加载库 | `dlopen` + `dlsym`（13 个符号，缺一个就报出名字） |
+| 枚举 | `MV_CC_EnumDevices(MV_GIGE_DEVICE \| MV_USB_DEVICE, &list)` |
+| 建句柄 | `MV_CC_CreateHandle` |
+| 打开 | `MV_CC_OpenDevice(handle, MV_ACCESS_Exclusive, 0)` |
+| 参数 | `MV_CC_SetEnumValue("PixelFormat"/"ExposureAuto"/"GainAuto")`、`MV_CC_SetIntValueEx("Width"/"Height"/"ExposureTime"/"Gain"/"GevSCPSPacketSize")` |
+| 取流 | `MV_CC_GetOneFrameTimeout`（`MV_E_NODATA` → 返回空，不算错误） |
+| 转换 | `MV_CC_ConvertPixelTypeEx`（非 Mono8/BGR8/RGB8 一律转 mono8） |
+| 关闭 | `MV_CC_StopGrabbing` → `MV_CC_CloseDevice` → `MV_CC_DestroyHandle` |
+
+其它实现细节：
+
+- **环境变量自动补齐**（仅当用户未设置时）：`MVCAM_SDK_PATH` / `MVCAM_COMMON_RUNENV` /
+  `MVCAM_SOFTWARE_LIBENV` / `MVCAM_GENICAM_CLPROTOCOL` —— 传输层插件靠它们定位。
+- **GigE 包大小**：自动调用 `MV_CC_GetOptimalPacketSize` 并写入 `GevSCPSPacketSize`。
+- **时间戳诚实性**：`nHostTimeStamp` 只在看起来像纳秒纪元（> 1e18）时才采用，否则用自己的时钟；
+  **设备时间戳的纪元未知，所以 `hardware_stamp_ns` 留空**，不伪装成墙上时间。
+- **失败信息可操作**：枚举到 0 个设备时打印供电/网线/L2 网段/`set_rp_filter` 四项检查清单。
+
+### 3. 编译与测试
+
+```
+-- Hikrobot MVS SDK headers found: /opt/MVS/include -> real camera support ON
+Finished <<< hikrobot_camera_ros2 [15.5s]
+Summary: 58 tests, 0 errors, 0 failures, 1 skipped
+```
+
+跳过的 1 项是"SDK 未安装"分支 —— 本机已安装，因此正确跳过。
+
+**更新了 4 个测试**以匹配新契约（不是放宽）：原先断言 `implemented=false`、
+`"MVS SDK not found"`，现在改为断言「要么报告 SDK 缺失、要么报告找不到相机，
+两者都必须说明真实阻塞原因，且绝不返回伪造帧」。
+
+### 4. 实测：无相机时的行为
+
+```
+[ERROR] backend 'mvs' unavailable: no Hikvision camera found by the MVS SDK. Checklist:
+  1. camera powered? (LED on)
+  2. Ethernet cable from camera to the host/bridged adapter?
+  3. is the camera on the same L2 segment as this interface?
+  4. run the SDK's set_rp_filter.sh --mode=2 on the host for cross-subnet discovery
+```
+
+**说明 SDK 已成功加载并完成了设备枚举**（只是没找到设备）。
+
+### 5. 仍未完成
+
+| 项 | 状态 |
+| --- | --- |
+| T01 MVS 官方采集 | ❌ 相机未接入虚拟机 |
+| T02 ROS 图像发布（真实） | ❌ 同上 |
+| 虚拟机桥接网卡 | ❌ 未配置（当前仅 NAT） |
+| 真实标定 T05 | ❌ 需棋盘格 |
+
+**代码侧已就绪**：硬件到位后只需 `vision_demo.launch.py backend:=mvs`。

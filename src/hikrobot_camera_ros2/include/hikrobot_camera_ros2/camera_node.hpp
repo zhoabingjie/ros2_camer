@@ -39,6 +39,7 @@
 #include "hikrobot_camera_ros2/camera_backend.hpp"
 #include "hikrobot_camera_ros2/camera_info_factory.hpp"
 #include "hikrobot_camera_ros2/mock_backend.hpp"
+#include "hikrobot_camera_ros2/mvs_backend.hpp"
 #include "hikrobot_camera_ros2/stream_health.hpp"
 
 namespace hikrobot_camera_ros2
@@ -83,7 +84,7 @@ private:
     std::string qos_reliability{"best_effort"};
     int qos_depth{5};
     MockBackendOptions mock;
-    std::vector<std::string> sdk_lib_candidates;
+    MvsBackendOptions mvs;
   };
 
   void declare_parameters();

@@ -33,7 +33,7 @@ std::unique_ptr<CameraBackend> create_backend(const BackendRequest & request)
     return std::make_unique<MockBackend>(request.mock);
   }
   if (key == "mvs") {
-    return std::make_unique<MvsBackend>(request.sdk_lib_candidates);
+    return std::make_unique<MvsBackend>(request.mvs);
   }
 
   const auto names = available_backends();

@@ -18,6 +18,18 @@ find_package(diagnostic_msgs REQUIRED)
 find_package(yaml_cpp_vendor REQUIRED)
 find_package(yaml-cpp REQUIRED)
 find_package(OpenCV REQUIRED COMPONENTS core imgcodecs imgproc)
+find_package(Threads REQUIRED)
+
+# The Hikrobot MVS SDK is optional: without it the package still builds and the
+# mock backend works. Detection is done at configure time so a machine without
+# the SDK never needs the vendor headers.
+set(HIKROBOT_MVS_INCLUDE_DIR "/opt/MVS/include" CACHE PATH "Hikrobot MVS SDK include dir")
+if(EXISTS "${HIKROBOT_MVS_INCLUDE_DIR}/MvCameraControl.h")
+  message(STATUS "Hikrobot MVS SDK headers found: ${HIKROBOT_MVS_INCLUDE_DIR} -> real camera support ON")
+  add_compile_definitions(HIKROBOT_MVS_AVAILABLE)
+else()
+  message(STATUS "Hikrobot MVS SDK headers NOT found -> real camera backend stays probe-only")
+endif()
 
 add_library(hikrobot_camera_ros2_core
   src/frame.cpp
@@ -33,6 +45,7 @@ target_include_directories(hikrobot_camera_ros2_core PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>
   ${OpenCV_INCLUDE_DIRS}
+  ${HIKROBOT_MVS_INCLUDE_DIR}
 )
 target_link_libraries(hikrobot_camera_ros2_core PUBLIC
   rclcpp::rclcpp
@@ -40,6 +53,8 @@ target_link_libraries(hikrobot_camera_ros2_core PUBLIC
   diagnostic_msgs::diagnostic_msgs
   yaml-cpp
   ${OpenCV_LIBS}
+  ${CMAKE_DL_LIBS}
+  Threads::Threads
 )
 
 add_executable(camera_node src/camera_main.cpp)
