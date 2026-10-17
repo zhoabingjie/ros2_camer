@@ -1,0 +1,22 @@
+# Expected interface of the vision subsystem (Phase 3).
+#
+# Verified against source, not guessed (see extras/docs/TEST_REPORT.md):
+#   camera topics      -> hikrobot_camera_ros2 (camera_node)
+#   image_rect         -> image_proc RectifyNode, namespace /camera
+#   yolo topics        -> yolo_ros plugins, namespace /yolo, camera name cam0
+#
+# Handy companion command:
+#   ros2 run dmu_vision_tools vision_health_check --measure 5
+camera:
+  image: /camera/image_raw
+  camera_info: /camera/camera_info
+  image_rect: /camera/image_rect          # silent until a valid calibration exists
+
+status: /vision/status
+
+yolo:
+  detections: /yolo/cam0/detections
+  tracking: /yolo/cam0/tracking
+  debug_image: /yolo/cam0/debug_image
+  debug_bb_markers: /yolo/cam0/debug_bb_markers
+  debug_kp_markers: /yolo/cam0/debug_kp_markers

@@ -1,0 +1,27 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>dmu_vision_bringup</name>
+  <version>0.1.0</version>
+  <description>
+    Launch files and parameter templates for the vision subsystem. Contains no
+    logic of its own: it orchestrates hikrobot_camera_ros2, image_proc and
+    (later) yolo_ros so each stage can be validated independently.
+  </description>
+  <maintainer email="design3-team3@proton.me">team3</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <exec_depend>hikrobot_camera_ros2</exec_depend>
+  <exec_depend>image_proc</exec_depend>
+  <exec_depend>camera_calibration</exec_depend>
+  <exec_depend>image_view</exec_depend>
+  <exec_depend>rqt_image_view</exec_depend>
+  <exec_depend>yolo_bringup</exec_depend>
+  <exec_depend>yolo_ros</exec_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

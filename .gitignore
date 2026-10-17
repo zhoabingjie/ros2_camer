@@ -1,0 +1,21 @@
+# ---- colcon build outputs ----
+build/
+install/
+log/
+
+# ---- python ----
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+
+# ---- runtime data (not distributed; see models/README.md) ----
+models/*.onnx
+models/*.jpg
+models/*.png
+
+# ---- offline build dependencies (see README) ----
+thirdparty/
+
+# ---- test artifacts ----
+extras/logs/

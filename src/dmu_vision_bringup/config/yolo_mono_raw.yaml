@@ -1,0 +1,50 @@
+# Monocular YOLO on /camera/image_raw instead of /camera/image_rect.
+#
+# WHY THIS FILE EXISTS
+#   yolo_mono.yaml detects on the RECTIFIED image, which is the right production
+#   default -- but /camera/image_rect is silent until a real calibration exists
+#   (image_proc refuses to rectify an all-zero K). For a demo without a camera
+#   and without a calibration, point the detector at the raw image instead.
+#
+# Everything else is identical to yolo_mono.yaml; keep them in sync.
+/yolo/yolo_node:
+  ros__parameters:
+    plugins: ["detection", "tracking", "debug"]
+    cameras: ["cam0"]
+    cam0:
+      rgb_topic: /camera/image_raw
+      image_reliability: 2      # 0=default, 1=RELIABLE, other=BEST_EFFORT (ours is best_effort)
+    detection:
+      plugin: yolo_ros/DetectionPlugin
+      cameras: ["cam0"]
+      model_type: auto
+      model_path: "/home/asd/vision_ws/models/yolo26n.onnx"
+      model_repo: ""
+      model_filename: ""
+      threshold: 0.5
+      iou: 0.45
+      n_threads: -1
+      img_width: 640
+      img_height: 480
+      provider: cpu
+      device: cpu
+      cuda_graph_enable: false
+      trt_fp16_enable: false
+      trt_engine_cache_enable: false
+      trt_engine_cache_path: ""
+      max_det: 300
+      max_fps: 0
+    tracking:
+      plugin: yolo_ros/TrackingPlugin
+      cameras: ["cam0"]
+      tracker_type: bytetrack
+      track_high_thresh: 0.25
+      track_low_thresh: 0.1
+      new_track_thresh: 0.25
+      track_buffer: 30
+      match_thresh: 0.8
+      fuse_score: true
+    debug:
+      plugin: yolo_ros/DebugPlugin
+      cameras: ["cam0"]
+      marker_lifetime: 0.5

@@ -1,0 +1,81 @@
+# Monocular YOLO configuration (Phase 3).
+#
+# Derived field-by-field from the ACTUAL yolo_ros v5.0.0 source, not from the
+# project plan's illustrative snippet (see extras/docs/ENVIRONMENT_AUDIT.md section 6.7
+# and extras/docs/YOLO_SETUP.md).
+#
+# Monocular-only guarantees:
+#   * NO `detection3d` plugin  -> nothing can fabricate 3D boxes / metric depth.
+#   * NO `depth_topic` / `depth_info_topic` (camera_streams.cpp requires them to
+#     be set together, so simply omitting both is the supported mono form).
+#
+# Offline guarantee:
+#   * `model_repo` and `model_filename` are EMPTY, so DetectionPlugin never calls
+#     the Hugging Face hub. `model_path` alone is used (detection_plugin.cpp:124-147).
+#
+# The block key MUST include the launch namespace (default "yolo"): rclcpp matches
+# --params-file sections by fully qualified node name, so `/yolo/yolo_node`.
+/yolo/yolo_node:
+  ros__parameters:
+    plugins: ["detection", "tracking", "debug"]
+    cameras: ["cam0"]
+
+    cam0:
+      # Detect on the RECTIFIED image when a calibration exists. Without a
+      # calibration /camera/image_rect is silent (image_proc refuses with
+      # "camera publishing '/camera/camera_info' is uncalibrated"), so for
+      # uncalibrated operation point this at /camera/image_raw instead.
+      rgb_topic: /camera/image_rect
+      # 0 = system default, 1 = RELIABLE, anything else (incl. 2) = BEST_EFFORT.
+      # Source: yolo_ros/utils/qos_compat.hpp + camera_streams.cpp (default 2).
+      # Our camera_node publishes BEST_EFFORT, so 2 is the only compatible value;
+      # 1 would leave the subscription silently dead.
+      image_reliability: 2
+
+    detection:
+      plugin: yolo_ros/DetectionPlugin
+      cameras: ["cam0"]
+      model_type: auto
+      model_path: "/home/asd/vision_ws/models/yolo26n.onnx"
+      model_repo: ""
+      model_filename: ""
+      threshold: 0.5
+      iou: 0.45
+      n_threads: -1
+      img_width: 640
+      img_height: 480
+      # --- CPU-only block -------------------------------------------------
+      # This VM has no NVIDIA GPU / CUDA / TensorRT (see ENVIRONMENT_AUDIT.md).
+      # Every default below is GPU-oriented, so each one is overridden explicitly
+      # rather than left to chance:
+      #   provider                default "auto"
+      #   device                  default "cuda:0"  <- caused
+      #       '[WARN] Provider "cpu" contradicts device "cuda:0"; using cpu.'
+      #   cuda_graph_enable       default true
+      #   trt_fp16_enable         default true
+      #   trt_engine_cache_enable default true
+      # (Defaults read from detection_plugin.cpp:declare_params.)
+      provider: cpu
+      device: cpu
+      cuda_graph_enable: false
+      trt_fp16_enable: false
+      trt_engine_cache_enable: false
+      trt_engine_cache_path: ""
+      max_det: 300
+      max_fps: 0
+
+    tracking:
+      plugin: yolo_ros/TrackingPlugin
+      cameras: ["cam0"]
+      tracker_type: bytetrack
+      track_high_thresh: 0.25
+      track_low_thresh: 0.1
+      new_track_thresh: 0.25
+      track_buffer: 30
+      match_thresh: 0.8
+      fuse_score: true
+
+    debug:
+      plugin: yolo_ros/DebugPlugin
+      cameras: ["cam0"]
+      marker_lifetime: 0.5

@@ -1,0 +1,48 @@
+# Hikrobot MV-CS050-10GM camera adapter (Phase 1, C++).
+#
+# backend: mock -> synthetic frames, no hardware, safe to run anywhere.
+#          mvs  -> real Hikvision camera. Requires the *Linux* MVS SDK.
+#                  It currently refuses to start with an explicit diagnostic
+#                  (see src/mvs_backend.cpp and extras/docs/ENVIRONMENT_AUDIT.md §8, B1/B2).
+/camera_node:
+  ros__parameters:
+    backend: mock
+    frame_id: camera_optical_frame
+
+    image_topic: /camera/image_raw
+    camera_info_topic: /camera/camera_info
+    status_topic: /vision/status
+
+    # Empty means "uncalibrated": an all-zero K/P CameraInfo is published and the
+    # stream is flagged uncalibrated. Point this at a camera_calibration YAML whose
+    # image_width/image_height match the live stream.
+    calibration_file: ""
+
+    stream_timeout_s: 2.0
+    grab_timeout_s: 0.2
+    reconnect_backoff_s: 1.0
+    status_period_s: 1.0
+
+    qos_reliability: best_effort
+    qos_depth: 5
+
+    # --- mock backend only -------------------------------------------------
+    mock_width: 640
+    mock_height: 480
+    mock_encoding: mono8
+    mock_fps: 10.0
+    mock_pattern: moving_bar
+    mock_fail_after_frames: -1     # >=0 enables dropout injection after N frames
+    mock_fail_duration_s: 0.0
+    mock_raise_after_frames: -1    # >=0 throws from grab() after N frames
+
+    # Optional: replay a still image instead of the synthetic pattern. Useful to
+    # show the FULL pipeline (camera -> image -> detection) with a real scene,
+    # because the synthetic patterns contain no objects a detector could find.
+    # It is still a replay source: the node reports mock_source=true.
+    # Requires mock_encoding to be mono8 or bgr8 (the image is resized to
+    # mock_width x mock_height).
+    mock_image_path: ""
+
+    # --- mvs backend only --------------------------------------------------
+    sdk_lib_candidates: [""]

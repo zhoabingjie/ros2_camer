@@ -1,0 +1,21 @@
+{
+  "python.defaultInterpreterPath": "/usr/bin/python3",
+  "python.analysis.extraPaths": [
+    "/opt/ros/jazzy/lib/python3.12/site-packages"
+  ],
+  "files.exclude": {
+    "**/__pycache__": true,
+    "**/*.pyc": true
+  },
+  "search.exclude": {
+    "build/**": true,
+    "install/**": true,
+    "log/**": true,
+    "src/yolo_ros-main/**": true
+  },
+  "files.associations": {
+    "*.msg": "plaintext",
+    "*.srv": "plaintext"
+  },
+  "cmake.sourceDirectory": "/home/asd/vision_ws/src/hikrobot_camera_ros2"
+}

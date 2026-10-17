@@ -1,0 +1,86 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "run: vision demo (camera + detection)",
+      "type": "shell",
+      "command": "bash -lc 'source /opt/ros/jazzy/setup.bash && source ${workspaceFolder}/install/setup.bash && ros2 launch dmu_vision_bringup vision_demo.launch.py'",
+      "isBackground": true,
+      "problemMatcher": []
+    },
+    {
+      "label": "colcon: build (all)",
+      "type": "shell",
+      "command": "bash -lc 'source /opt/ros/jazzy/setup.bash && cd ${workspaceFolder} && colcon build --symlink-install'",
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "colcon: build (camera pkg only)",
+      "type": "shell",
+      "command": "bash -lc 'source /opt/ros/jazzy/setup.bash && cd ${workspaceFolder} && colcon build --symlink-install --packages-select hikrobot_camera_ros2'",
+      "problemMatcher": []
+    },
+    {
+      "label": "colcon: test",
+      "type": "shell",
+      "command": "bash -lc 'source /opt/ros/jazzy/setup.bash && cd ${workspaceFolder} && colcon test --packages-select hikrobot_camera_ros2 --event-handlers console_direct+ && colcon test-result --all'",
+      "group": {
+        "kind": "test",
+        "isDefault": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "run: camera (mock backend)",
+      "type": "shell",
+      "command": "bash -lc 'source /opt/ros/jazzy/setup.bash && source ${workspaceFolder}/install/setup.bash && ros2 launch hikrobot_camera_ros2 camera.launch.py'",
+      "isBackground": true,
+      "problemMatcher": []
+    },
+    {
+      "label": "run: camera (real MVS backend)",
+      "type": "shell",
+      "command": "bash -lc 'source /opt/ros/jazzy/setup.bash && source ${workspaceFolder}/install/setup.bash && ros2 launch hikrobot_camera_ros2 camera.launch.py backend:=mvs'",
+      "isBackground": true,
+      "problemMatcher": []
+    },
+    {
+      "label": "run: preview (mock, uncalibrated)",
+      "type": "shell",
+      "command": "bash -lc 'source /opt/ros/jazzy/setup.bash && source ${workspaceFolder}/install/setup.bash && ros2 launch dmu_vision_bringup preview.launch.py backend:=mock'",
+      "isBackground": true,
+      "problemMatcher": []
+    },
+    {
+      "label": "run: preview (mock, synthetic calibration)",
+      "type": "shell",
+      "command": "bash -lc 'source /opt/ros/jazzy/setup.bash && source ${workspaceFolder}/install/setup.bash && ros2 launch dmu_vision_bringup preview.launch.py backend:=mock calibration_file:=${workspaceFolder}/install/dmu_vision_bringup/share/dmu_vision_bringup/config/mock/test_calibration.yaml'",
+      "isBackground": true,
+      "problemMatcher": []
+    },
+    {
+      "label": "run: calibration (needs real camera + checkerboard)",
+      "type": "shell",
+      "command": "bash -lc 'source /opt/ros/jazzy/setup.bash && source ${workspaceFolder}/install/setup.bash && ros2 launch dmu_vision_bringup calibration.launch.py backend:=mvs size:=8x6 square:=0.025'",
+      "isBackground": true,
+      "problemMatcher": []
+    },
+    {
+      "label": "run: image viewer (rectified)",
+      "type": "shell",
+      "command": "bash -lc 'source /opt/ros/jazzy/setup.bash && source ${workspaceFolder}/install/setup.bash && ros2 run image_view image_view --ros-args -r image:=/camera/image_rect'",
+      "isBackground": true,
+      "problemMatcher": []
+    },
+    {
+      "label": "run: vision health check",
+      "type": "shell",
+      "command": "bash -lc 'source /opt/ros/jazzy/setup.bash && source ${workspaceFolder}/install/setup.bash && ros2 run dmu_vision_tools vision_health_check --measure 5'",
+      "problemMatcher": []
+    }
+  ]
+}
