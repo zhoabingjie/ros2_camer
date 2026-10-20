@@ -71,7 +71,7 @@ public:
 private:
   struct Config
   {
-    std::string backend{"mock"};
+    std::string backend{"mvs"};
     std::string frame_id{"camera_optical_frame"};
     std::string image_topic{"/camera/image_raw"};
     std::string camera_info_topic{"/camera/camera_info"};
@@ -83,6 +83,7 @@ private:
     double status_period_s{1.0};
     std::string qos_reliability{"best_effort"};
     int qos_depth{5};
+    bool require_camera_at_startup{true};
     MockBackendOptions mock;
     MvsBackendOptions mvs;
   };

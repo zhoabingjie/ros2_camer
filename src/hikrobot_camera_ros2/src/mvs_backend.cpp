@@ -275,6 +275,14 @@ void set_env_if_unset(const char * key, const std::string & value)
   if (std::getenv(key) == nullptr) {::setenv(key, value.c_str(), 0);}
 }
 
+std::string format_ip(unsigned int ip)
+{
+  std::ostringstream os;
+  os << ((ip >> 24) & 0xFF) << "." << ((ip >> 16) & 0xFF) << "."
+     << ((ip >> 8) & 0xFF) << "." << (ip & 0xFF);
+  return os.str();
+}
+
 std::string normalise_serial(const unsigned char * raw, std::size_t max_len)
 {
   std::size_t len = 0;
@@ -287,6 +295,14 @@ std::string normalise_serial(const unsigned char * raw, std::size_t max_len)
 MvsBackend::MvsBackend(MvsBackendOptions options)
 : options_(std::move(options))
 {
+}
+
+MvsBackend::~MvsBackend()
+{
+  // open() may fail after CreateHandle/OpenDevice; the backend object is then
+  // destroyed by the node without an explicit close(). Release any partial
+  // state here so a retry cannot leak device handles.
+  close();
 }
 
 const MvsSdkProbe & MvsBackend::probe() const
@@ -307,11 +323,13 @@ std::string MvsBackend::describe() const
 #endif
   os << " sdk_library_found=" << (report.library_found() ? "true" : "false")
      << " sdk_headers_found=" << (report.headers_found() ? "true" : "false");
+  if (!device_summary_.empty()) {os << " " << device_summary_;}
   return os.str();
 }
 
 void MvsBackend::open()
 {
+  if (handle_ != nullptr) {close();}
   const auto & report = probe();
   if (!report.library_found()) {
     throw BackendUnavailableError(
@@ -345,9 +363,31 @@ void MvsBackend::open()
   if (rc != MV_OK) {
     throw std::runtime_error("MV_CC_EnumDevices failed: " + mvs_error_text(rc));
   }
+  // Record what the enumeration actually returned: model, serial and IP are
+  // exactly what a human needs in order to fix the network configuration.
+  {
+    std::ostringstream devs;
+    devs << "devices=" << devices.nDeviceNum;
+    for (unsigned int i = 0; i < devices.nDeviceNum; ++i) {
+      const MV_CC_DEVICE_INFO * info = devices.pDeviceInfo[i];
+      if (info == nullptr) {continue;}
+      if ((info->nTLayerType & MV_GIGE_DEVICE) != 0) {
+        const auto & gige = info->SpecialInfo.stGigEInfo;
+        devs << " [GigE model='" << normalise_serial(gige.chModelName, 32)
+             << "' serial='" << normalise_serial(gige.chSerialNumber, 16)
+             << "' ip=" << format_ip(gige.nCurrentIp)
+             << " mask=" << format_ip(gige.nCurrentSubNetMask) << "]";
+      } else {
+        devs << " [non-GigE type=0x" << std::hex << info->nTLayerType << std::dec << "]";
+      }
+    }
+    device_summary_ = devs.str();
+  }
+
   if (devices.nDeviceNum == 0) {
     throw BackendUnavailableError(
-            "no Hikvision camera found by the MVS SDK. Checklist:\n"
+            std::string("no Hikvision camera found by the MVS SDK (") +
+            device_summary_ + "). Checklist:\n"
             "  1. camera powered? (LED on)\n"
             "  2. Ethernet cable from camera to the host/bridged adapter?\n"
             "  3. is the camera on the same L2 segment as this interface?\n"
@@ -355,20 +395,32 @@ void MvsBackend::open()
   }
 
   const MV_CC_DEVICE_INFO * chosen = nullptr;
+  unsigned int gige_count = 0;
   for (unsigned int i = 0; i < devices.nDeviceNum; ++i) {
     const MV_CC_DEVICE_INFO * info = devices.pDeviceInfo[i];
-    if (info == nullptr) {continue;}
-    if ((info->nTLayerType & MV_GIGE_DEVICE) != 0) {
-      const std::string serial = normalise_serial(info->SpecialInfo.stGigEInfo.chSerialNumber, 16);
-      if (options_.serial_number.empty() || serial == options_.serial_number) {
-        chosen = info;
-        break;
-      }
+    if (info == nullptr || (info->nTLayerType & MV_GIGE_DEVICE) == 0) {continue;}
+    ++gige_count;
+    const std::string serial = normalise_serial(info->SpecialInfo.stGigEInfo.chSerialNumber, 16);
+    if (!options_.serial_number.empty() && serial == options_.serial_number) {
+      chosen = info;
+    } else if (options_.serial_number.empty() && chosen == nullptr) {
+      chosen = info;
     }
+  }
+  if (gige_count == 0) {
+    throw BackendUnavailableError(
+            "no GigE camera found by the MVS SDK (" + device_summary_ +
+            "). Check the camera power, cable and network interface.");
+  }
+  if (options_.serial_number.empty() && gige_count > 1) {
+    throw BackendUnavailableError(
+            "multiple GigE cameras found (" + device_summary_ +
+            "). Set mvs_serial_number to select exactly one camera.");
   }
   if (chosen == nullptr) {
     throw BackendUnavailableError(
-            "no camera matched serial '" + options_.serial_number + "'");
+            "no camera matched serial '" + options_.serial_number + "' (" +
+            device_summary_ + ")");
   }
 
   rc = api->create_handle(&handle_, chosen);

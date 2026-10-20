@@ -1,5 +1,52 @@
 # 环境与源码审计报告（Phase 0）
 
+## 2026-10-20 重整前复核（最新）
+
+| 项目 | 实测结果 |
+|---|---|
+| Windows 仓库 | `D:\无人车\ros2_camer`，分支 `main`，重整前无未提交改动 |
+| 虚拟机工作区 | `/home/asd/vision_ws`，源码未纳入 Git，不能直接覆盖 |
+| 虚拟机相对 Windows 的实质差异 | `mvs_backend` 中新增设备型号、序列号和 IP 枚举输出；已安全合并 |
+| Ubuntu | 24.04.4 LTS |
+| CPU 架构 | x86_64 |
+| ROS | Jazzy |
+| MVS 包 | `mvs`，`install ok installed`，安装到 `/opt/MVS` |
+| MVS 动态库 | `/opt/MVS/lib/64/libMvCameraControl.so.4.8.1.2` |
+| MVS 客户端 | `/opt/MVS/bin/MVS`，动态库检查通过 |
+| 当前相机枚举 | `devices=0` |
+| 当前真实取流 | **未通过**：宿主 Realtek 以太网仍为 `Disconnected / 0 bps`，VM 没有相机桥接网卡 |
+| Jazzy 依赖 | `image_proc`、`image_view`、`rqt_image_view`、`camera_calibration`、`cv_bridge` 可用 |
+| 上游 YOLO | `yolo_msgs`、`yolo_ros`、`yolo_bringup` 由工作区构建 |
+| 构建 | 10 个包构建通过 |
+| 测试 | 404 tests / 0 failures / 0 errors / 10 skipped |
+| 安全审计 | 相机和障碍物节点测试均检查不发布 `/cmd_vel` |
+
+### 发现的问题
+
+1. 正式入口默认 Mock，不符合真实相机默认要求。
+2. MVS 失败时节点无限重连，启动命令不会返回失败。
+3. MVS 部分初始化失败后存在句柄释放风险。
+4. 多相机选择不明确。
+5. 缺少稳定视觉障碍物接口和独立节点。
+6. YOLO 只有 `/yolo/cam0/*` 上游接口，缺少 `/vision/*` 正式接口。
+7. 文档中的真实相机状态和启动命令过期。
+
+### 本次处理
+
+- 正式入口切换为 `backend:=mvs`。
+- 增加 `require_camera_at_startup`，失败返回非零。
+- 增加 MVS 部分初始化析构清理和多相机明确选择。
+- 新增 `dmu_vision_interfaces` 和 `visual_obstacle_avoidance`。
+- 正式入口提供稳定 `/vision/*` Topic，同时保留上游旧启动方式。
+- 更新主 README、接口清单、迁移说明和包级 README。
+
+### 仍未完成
+
+真实相机采集、`rqt_image_view` 实机画面、真实标定和相机断线恢复必须在 GigE 链路可用后验收。不得用 Mock 结果替代。
+
+---
+
+
 | 项目 | 值 |
 | --- | --- |
 | 报告日期 | 2026-10-16 |

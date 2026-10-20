@@ -67,9 +67,9 @@ class M(Node):
     def __init__(self):
         super().__init__("t08")
         self.d = 0; self.g = 0; self.lat = None
-        self.create_subscription(DetectionArray, "/yolo/cam0/detections",
+        self.create_subscription(DetectionArray, "/vision/detections",
                                  self.on_det, qos_profile_sensor_data)
-        self.create_subscription(Image, "/yolo/cam0/debug_image", self.on_dbg, RELIABLE)
+        self.create_subscription(Image, "/vision/debug_image", self.on_dbg, RELIABLE)
     def on_det(self, m):
         self.d += 1
         s = m.header.stamp.sec * 10**9 + m.header.stamp.nanosec

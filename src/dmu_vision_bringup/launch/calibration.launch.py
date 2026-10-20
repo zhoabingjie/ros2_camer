@@ -40,7 +40,11 @@ def generate_launch_description():
         output="screen",
         parameters=[
             camera_params_file,
-            {"backend": backend, "frame_id": frame_id},
+            {
+                "backend": backend,
+                "frame_id": frame_id,
+                "require_camera_at_startup": True,
+            },
         ],
     )
 
@@ -60,8 +64,8 @@ def generate_launch_description():
         [
             DeclareLaunchArgument("camera_params_file", default_value=camera_params),
             DeclareLaunchArgument(
-                "backend", default_value="mock",
-                description="'mock' only proves the wiring; a real calibration needs backend:=mvs",
+                "backend", default_value="mvs",
+                description="'mvs' for real calibration; 'mock' only proves wiring",
             ),
             DeclareLaunchArgument("frame_id", default_value="camera_optical_frame"),
             DeclareLaunchArgument(

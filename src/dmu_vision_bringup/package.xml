@@ -6,7 +6,7 @@
   <description>
     Launch files and parameter templates for the vision subsystem. Contains no
     logic of its own: it orchestrates hikrobot_camera_ros2, image_proc and
-    (later) yolo_ros so each stage can be validated independently.
+    yolo_ros and visual_obstacle_avoidance so each stage can be validated independently.
   </description>
   <maintainer email="design3-team3@proton.me">team3</maintainer>
   <license>Apache-2.0</license>
@@ -20,6 +20,8 @@
   <exec_depend>rqt_image_view</exec_depend>
   <exec_depend>yolo_bringup</exec_depend>
   <exec_depend>yolo_ros</exec_depend>
+  <exec_depend>dmu_vision_interfaces</exec_depend>
+  <exec_depend>visual_obstacle_avoidance</exec_depend>
 
   <export>
     <build_type>ament_cmake</build_type>

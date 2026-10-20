@@ -36,6 +36,6 @@ def test_percentile_does_not_mutate_input():
 def test_parser_defaults_match_the_verified_topic_names():
     args = build_parser().parse_args([])
     assert args.image == "/camera/image_raw"
-    assert args.detections == "/yolo/cam0/detections"
-    assert args.debug == "/yolo/cam0/debug_image"
+    assert args.detections == "/vision/detections"
+    assert args.debug == "/vision/debug_image"
     assert args.seconds == 30.0

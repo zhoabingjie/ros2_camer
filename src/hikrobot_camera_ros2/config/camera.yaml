@@ -1,12 +1,10 @@
 # Hikrobot MV-CS050-10GM camera adapter (Phase 1, C++).
 #
-# backend: mock -> synthetic frames, no hardware, safe to run anywhere.
-#          mvs  -> real Hikvision camera. Requires the *Linux* MVS SDK.
-#                  It currently refuses to start with an explicit diagnostic
-#                  (see src/mvs_backend.cpp and extras/docs/ENVIRONMENT_AUDIT.md §8, B1/B2).
+# backend: mvs  -> real Hikvision GigE camera (the formal default).
+#          mock -> synthetic/replayed frames for explicit offline development only.
 /camera_node:
   ros__parameters:
-    backend: mock
+    backend: mvs
     frame_id: camera_optical_frame
 
     image_topic: /camera/image_raw
@@ -22,6 +20,9 @@
     grab_timeout_s: 0.2
     reconnect_backoff_s: 1.0
     status_period_s: 1.0
+    # Refuse to run the formal camera entry with no image source. Set false only
+    # when deliberately testing reconnect behaviour without hardware.
+    require_camera_at_startup: true
 
     qos_reliability: best_effort
     qos_depth: 5

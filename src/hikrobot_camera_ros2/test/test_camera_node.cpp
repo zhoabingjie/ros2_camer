@@ -44,6 +44,7 @@ rclcpp::NodeOptions fastMockOptions()
   rclcpp::NodeOptions options;
   options.parameter_overrides(
   {
+    rclcpp::Parameter("backend", "mock"),
     rclcpp::Parameter("mock_width", 64),
     rclcpp::Parameter("mock_height", 48),
     rclcpp::Parameter("mock_fps", 100.0),
@@ -174,12 +175,33 @@ TEST_F(CameraNodeTest, PublishesStreamDiagnostics)
   EXPECT_NE(values.count("measured_fps"), 0u);
 }
 
+TEST_F(CameraNodeTest, StartupFailsWhenRealCameraIsRequiredButUnavailable)
+{
+  rclcpp::NodeOptions options;
+  options.parameter_overrides(
+  {
+    rclcpp::Parameter("backend", "mvs"),
+    rclcpp::Parameter("require_camera_at_startup", true),
+    rclcpp::Parameter("reconnect_backoff_s", 0.2),
+  });
+
+  try {
+    auto node = std::make_shared<CameraNode>(options);
+    node->stop();
+    GTEST_SKIP() << "a camera is attached and the real startup path succeeded";
+  } catch (const std::exception & exc) {
+    const std::string message = exc.what();
+    EXPECT_NE(message.find("required camera backend"), std::string::npos) << message;
+    EXPECT_NE(message.find("backend:=mock"), std::string::npos) << message;
+  }
+}
 TEST_F(CameraNodeTest, MvsBackendRefusesWithActionableMessage)
 {
   rclcpp::NodeOptions options;
   options.parameter_overrides(
   {
     rclcpp::Parameter("backend", "mvs"),
+    rclcpp::Parameter("require_camera_at_startup", false),
     rclcpp::Parameter("status_period_s", 0.1),
     rclcpp::Parameter("reconnect_backoff_s", 0.2),
   });

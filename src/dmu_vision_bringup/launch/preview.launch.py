@@ -31,6 +31,7 @@ def generate_launch_description():
 
     camera_params_file = LaunchConfiguration("camera_params_file")
     backend = LaunchConfiguration("backend")
+    require_camera = LaunchConfiguration("require_camera_at_startup")
     frame_id = LaunchConfiguration("frame_id")
     calibration_file = LaunchConfiguration("calibration_file")
     start_rectify = LaunchConfiguration("start_rectify")
@@ -47,6 +48,7 @@ def generate_launch_description():
                 "backend": backend,
                 "frame_id": frame_id,
                 "calibration_file": calibration_file,
+                "require_camera_at_startup": require_camera,
                 "mock_pattern": mock_pattern,
             },
         ],
@@ -80,8 +82,8 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument(
                 "backend",
-                default_value="mock",
-                description="'mock' for synthetic frames, 'mvs' for the real Hikvision camera",
+                default_value="mvs",
+                description="'mvs' for the real camera; 'mock' only for explicit offline testing",
             ),
             DeclareLaunchArgument(
                 "frame_id",
@@ -103,6 +105,11 @@ def generate_launch_description():
                     "mock backend pattern. Use 'gradient' for a time-invariant frame, which "
                     "makes raw-vs-rect pixel comparison meaningful in verification scripts."
                 ),
+            ),
+            DeclareLaunchArgument(
+                "require_camera_at_startup",
+                default_value="true",
+                description="Fail instead of running with no image source",
             ),
             DeclareLaunchArgument(
                 "start_rectify",

@@ -1,19 +1,12 @@
 // Copyright 2026 team3
 // SPDX-License-Identifier: Apache-2.0
 //
-// Hikrobot MVS backend: SDK availability probe only. Not a driver. On purpose.
+// Hikrobot MVS GigE backend.
 //
-// PHASE 0 AUDIT EVIDENCE (extras/docs/ENVIRONMENT_AUDIT.md section 4):
-//   * The Linux MVS SDK is not installed in this environment.
-//   * No Hikvision camera is attached.
-//   * The only SDK archive on hand is MVS_Win_STD_5.0.2 -- a Windows build.
-//
-// An MvCameraControl wrapper cannot be written from memory: symbol names, struct
-// layouts, pixel-format constants and error codes must come from the real
-// `MvCameraControl.h` of the Linux SDK. Guessing them yields code that looks
-// complete and fails on the robot. This backend therefore detects the SDK,
-// reports exactly what is missing, and refuses to acquire -- it never returns
-// fabricated frames.
+// The vendor library is loaded with dlopen() so the package can still be built
+// and the mock backend can still run on a machine without the MVS SDK. All
+// symbols and structure layouts used by this backend are taken from the MVS
+// headers installed on the target system; no SDK API is guessed.
 
 #ifndef HIKROBOT_CAMERA_ROS2__MVS_BACKEND_HPP_
 #define HIKROBOT_CAMERA_ROS2__MVS_BACKEND_HPP_
@@ -52,7 +45,8 @@ struct MvsBackendOptions
 {
   std::vector<std::string> sdk_lib_candidates;
 
-  /// Empty = use the first enumerated device.
+  /// Empty is accepted only when exactly one GigE camera is visible. With
+  /// multiple cameras this must be set to the intended serial number.
   std::string serial_number;
   /// Empty = leave the device's current pixel format (we convert to mono8/bgr8).
   /// Any other value is written to the "PixelFormat" node by name, e.g. "Mono8".
@@ -71,6 +65,7 @@ class MvsBackend : public CameraBackend
 {
 public:
   explicit MvsBackend(MvsBackendOptions options = MvsBackendOptions{});
+  ~MvsBackend() override;
 
   std::string name() const override {return "mvs";}
   bool requires_hardware() const override {return true;}
@@ -87,6 +82,8 @@ private:
   void * handle_{nullptr};
   void * library_{nullptr};
   std::vector<uint8_t> buffer_;
+  /// Human-readable list of devices seen by the last enumeration.
+  std::string device_summary_;
 };
 
 }  // namespace hikrobot_camera_ros2

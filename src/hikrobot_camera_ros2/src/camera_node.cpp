@@ -105,6 +105,17 @@ CameraNode::CameraNode(const rclcpp::NodeOptions & options)
     }
   }
 
+  if (config_.require_camera_at_startup) {
+    auto backend = make_backend();
+    if (!backend) {
+      throw std::runtime_error(
+              "required camera backend '" + config_.backend +
+              "' could not be opened; refusing to start with no image source. "
+              "Use backend:=mock only for an explicit offline demo.");
+    }
+    backend_ = std::move(backend);
+  }
+
   worker_ = std::thread(&CameraNode::acquire_loop, this);
   watchdog_ = create_wall_timer(
     std::chrono::duration_cast<std::chrono::nanoseconds>(
@@ -131,6 +142,7 @@ void CameraNode::declare_parameters()
   declare_parameter<double>("status_period_s", 1.0);
   declare_parameter<std::string>("qos_reliability", "best_effort");
   declare_parameter<int>("qos_depth", 5);
+  declare_parameter<bool>("require_camera_at_startup", true);
 
   declare_parameter<int>("mock_width", 640);
   declare_parameter<int>("mock_height", 480);
@@ -172,6 +184,7 @@ CameraNode::Config CameraNode::read_config()
   config.status_period_s = get_parameter("status_period_s").as_double();
   config.qos_reliability = get_parameter("qos_reliability").as_string();
   config.qos_depth = static_cast<int>(get_parameter("qos_depth").as_int());
+  config.require_camera_at_startup = get_parameter("require_camera_at_startup").as_bool();
 
   config.mock.width = static_cast<int>(get_parameter("mock_width").as_int());
   config.mock.height = static_cast<int>(get_parameter("mock_height").as_int());

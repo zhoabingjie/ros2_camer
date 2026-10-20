@@ -1,12 +1,9 @@
-# Expected interface of the vision subsystem (Phase 3).
+# Expected interfaces of the vision subsystem.
 #
-# Verified against source, not guessed (see extras/docs/TEST_REPORT.md):
-#   camera topics      -> hikrobot_camera_ros2 (camera_node)
-#   image_rect         -> image_proc RectifyNode, namespace /camera
-#   yolo topics        -> yolo_ros plugins, namespace /yolo, camera name cam0
-#
-# Handy companion command:
-#   ros2 run dmu_vision_tools vision_health_check --measure 5
+# Formal entry (dmu_vision_bringup/vision.launch.py) exposes stable /vision/*
+# topics. The upstream yolo_bringup launch remains available and keeps the
+# legacy /yolo/cam0/* names shown at the end of this file.
+
 camera:
   image: /camera/image_raw
   camera_info: /camera/camera_info
@@ -15,6 +12,17 @@ camera:
 status: /vision/status
 
 yolo:
+  detections: /vision/detections
+  tracking: /vision/tracks
+  debug_image: /vision/debug_image
+  debug_bb_markers: /vision/debug_bb_markers
+  debug_kp_markers: /vision/debug_kp_markers
+
+obstacle:
+  obstacles: /vision/obstacles
+  debug_image: /vision/obstacle_debug_image
+
+legacy_yolo:
   detections: /yolo/cam0/detections
   tracking: /yolo/cam0/tracking
   debug_image: /yolo/cam0/debug_image

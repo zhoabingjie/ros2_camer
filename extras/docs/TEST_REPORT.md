@@ -1,5 +1,111 @@
 # 测试报告
 
+## 2026-10-20 重整后完整验证
+
+### 构建
+
+```bash
+cd ~/vision_ws
+source /opt/ros/jazzy/setup.bash
+colcon build --symlink-install --parallel-workers 2 \
+  --cmake-args \
+  -DONNXRUNTIME_ROOT=$HOME/vision_ws/thirdparty/onnxruntime-linux-x64-1.20.0 \
+  -DFETCHCONTENT_SOURCE_DIR_YOLO_HFHUB=$HOME/vision_ws/thirdparty/huggingface-hub-cpp
+```
+
+结果：
+
+```text
+Summary: 10 packages finished
+BUILD_RC=0
+```
+
+### 测试
+
+```bash
+export YOLO_ROS_TEST_MODEL_DIR=$HOME/vision_ws/models
+export YOLO_ROS_TEST_IMAGE=$HOME/vision_ws/models/demo_scene.jpg
+export YOLO_ROS_TEST_PEOPLE_IMAGE=$HOME/vision_ws/models/demo_scene.jpg
+colcon test --parallel-workers 2
+colcon test-result --verbose
+```
+
+结果：
+
+```text
+Summary: 404 tests, 0 errors, 0 failures, 10 skipped
+TEST_RC=0
+RESULT_RC=0
+```
+
+### Mock 端到端运行
+
+```bash
+ros2 launch dmu_vision_bringup vision.launch.py backend:=mock \
+  mock_image_path:=$HOME/vision_ws/models/demo_scene.jpg \
+  mock_encoding:=bgr8 mock_fps:=8.0 start_rectify:=false
+```
+
+实测节点：
+
+```text
+/camera_node
+/yolo/yolo_node
+/visual_obstacle_node
+```
+
+实测稳定 Topic 类型：
+
+```text
+/camera/image_raw        sensor_msgs/msg/Image
+/vision/detections       yolo_msgs/msg/DetectionArray
+/vision/tracks           yolo_msgs/msg/DetectionArray
+/vision/debug_image      sensor_msgs/msg/Image
+/vision/obstacles        dmu_vision_interfaces/msg/VisualObstacleArray
+/vision/status           diagnostic_msgs/msg/DiagnosticArray
+```
+
+图像发布频率实测约 `7 Hz`。`/vision/debug_image` 和 `/vision/obstacle_debug_image` 均实际收到 `640` 像素宽的图像帧。实际障碍物消息：
+
+```yaml
+status: 3
+status_text: 'obstacle: confirmed 2D candidate in ROI'
+input_valid: true
+obstacles:
+  - class_id: 5
+    class_name: bus
+    score: 0.8817915916442871
+  - class_id: 0
+    class_name: person
+    score: 0.8305646181106567
+```
+
+### MVS 缺失启动行为
+
+```bash
+ros2 run hikrobot_camera_ros2 camera_node --ros-args -p backend:=mvs
+```
+
+实测：
+
+```text
+MVS_REQUIRED_RC=1
+backend 'mvs' unavailable: no Hikvision camera found by the MVS SDK (devices=0)
+camera driver startup failed: required camera backend 'mvs' could not be opened
+```
+
+该结果证明正式入口不会静默回退 Mock。
+
+### 未完成实机验收
+
+- 真实 MVS 枚举和取流：未通过，当前 `devices=0`。
+- `rqt_image_view` 真实画面：未验证。
+- 真实相机标定：未验证。
+- 真实相机拔插/掉线恢复：未验证。
+
+---
+
+
 本文件按阶段累积。所有数值均为实测输出，未编造。
 
 ## Phase 1 — 相机最小接入（离线部分，C++17 / rclcpp）

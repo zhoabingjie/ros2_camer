@@ -140,8 +140,8 @@ def build_parser() -> argparse.ArgumentParser:
         prog="measure_detection",
         description="Measure detection rate, latency and content.")
     parser.add_argument("--image", default="/camera/image_raw", help="source image topic")
-    parser.add_argument("--detections", default="/yolo/cam0/detections", help="detection topic")
-    parser.add_argument("--debug", default="/yolo/cam0/debug_image", help="debug image topic")
+    parser.add_argument("--detections", default="/vision/detections", help="detection topic")
+    parser.add_argument("--debug", default="/vision/debug_image", help="debug image topic")
     parser.add_argument("--seconds", type=float, default=30.0, help="measurement window")
     return parser
 
