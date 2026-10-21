@@ -34,6 +34,10 @@ ros2 launch dmu_vision_bringup vision.launch.py
 只启动真实相机：
 
 ```bash
+cd ~/vision_ws
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+
 ros2 launch hikrobot_camera_ros2 camera.launch.py backend:=mvs
 ```
 
@@ -44,8 +48,9 @@ ros2 launch hikrobot_camera_ros2 camera.launch.py backend:=mvs
 另开终端：
 
 ```bash
+cd ~/vision_ws
 source /opt/ros/jazzy/setup.bash
-source ~/vision_ws/install/setup.bash
+source install/setup.bash
 
 # 原始相机图像
 QT_QPA_PLATFORM=xcb ros2 launch dmu_vision_bringup image_viewer.launch.py \
@@ -63,6 +68,10 @@ QT_QPA_PLATFORM=xcb ros2 launch dmu_vision_bringup image_viewer.launch.py \
 终端检查：
 
 ```bash
+cd ~/vision_ws
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+
 ros2 topic list
 ros2 topic hz /camera/image_raw
 ros2 topic echo --once /camera/camera_info
@@ -74,6 +83,10 @@ ros2 run dmu_vision_tools vision_health_check --measure 5
 ## 显式离线 Mock
 
 ```bash
+cd ~/vision_ws
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+
 ros2 launch dmu_vision_bringup vision.launch.py \
   backend:=mock \
   mock_image_path:=$HOME/vision_ws/models/demo_scene.jpg \
@@ -85,6 +98,10 @@ ros2 launch dmu_vision_bringup vision.launch.py \
 旧回放演示仍保留：
 
 ```bash
+cd ~/vision_ws
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+
 ros2 launch dmu_vision_bringup vision_demo.launch.py
 ```
 

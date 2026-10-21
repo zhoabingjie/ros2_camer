@@ -19,6 +19,10 @@ source install/setup.bash
 ## 2. 启动真实相机 + YOLO + 障碍物
 
 ```bash
+cd ~/vision_ws
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+
 ros2 launch dmu_vision_bringup vision.launch.py
 ```
 
@@ -42,8 +46,9 @@ ros2 launch dmu_vision_bringup vision.launch.py
 另开终端：
 
 ```bash
+cd ~/vision_ws
 source /opt/ros/jazzy/setup.bash
-source ~/vision_ws/install/setup.bash
+source install/setup.bash
 
 QT_QPA_PLATFORM=xcb ros2 launch dmu_vision_bringup image_viewer.launch.py \
   image_topic:=/camera/image_raw
@@ -52,6 +57,10 @@ QT_QPA_PLATFORM=xcb ros2 launch dmu_vision_bringup image_viewer.launch.py \
 查看 YOLO 检测框：
 
 ```bash
+cd ~/vision_ws
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+
 QT_QPA_PLATFORM=xcb ros2 launch dmu_vision_bringup image_viewer.launch.py \
   image_topic:=/vision/debug_image
 ```
@@ -59,6 +68,10 @@ QT_QPA_PLATFORM=xcb ros2 launch dmu_vision_bringup image_viewer.launch.py \
 查看障碍物 ROI：
 
 ```bash
+cd ~/vision_ws
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+
 QT_QPA_PLATFORM=xcb ros2 launch dmu_vision_bringup image_viewer.launch.py \
   image_topic:=/vision/obstacle_debug_image
 ```
@@ -66,6 +79,10 @@ QT_QPA_PLATFORM=xcb ros2 launch dmu_vision_bringup image_viewer.launch.py \
 ## 4. 检查链路
 
 ```bash
+cd ~/vision_ws
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+
 ros2 node list
 ros2 topic list
 ros2 topic info -v /camera/image_raw
@@ -80,6 +97,10 @@ ros2 run dmu_vision_tools vision_health_check --measure 5
 ## 5. 只启动相机
 
 ```bash
+cd ~/vision_ws
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+
 ros2 launch hikrobot_camera_ros2 camera.launch.py backend:=mvs
 ```
 
@@ -88,6 +109,10 @@ ros2 launch hikrobot_camera_ros2 camera.launch.py backend:=mvs
 ## 6. 显式离线 Mock
 
 ```bash
+cd ~/vision_ws
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+
 ros2 launch dmu_vision_bringup vision.launch.py \
   backend:=mock \
   mock_image_path:=$HOME/vision_ws/models/demo_scene.jpg \
@@ -99,6 +124,10 @@ ros2 launch dmu_vision_bringup vision.launch.py \
 旧回放 Demo：
 
 ```bash
+cd ~/vision_ws
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+
 ros2 launch dmu_vision_bringup vision_demo.launch.py
 ```
 

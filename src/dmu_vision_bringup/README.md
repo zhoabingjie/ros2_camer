@@ -1,66 +1,118 @@
 # dmu_vision_bringup
 
-视觉模块启动与参数编排包。
+视觉模块启动与参数编排包，不包含视觉算法。它负责组合相机、YOLO、障碍物和图像预览入口。
 
-每个新终端都需要先加载环境：
+## 通用环境加载
+
+每个新终端都要先执行：
 
 ```bash
 cd ~/vision_ws
 source /opt/ros/jazzy/setup.bash
 source install/setup.bash
-```它不包含视觉算法，只负责组合相机、YOLO、障碍物和预览入口。
+```
 
-## 正式入口
+确认包可以被找到：
 
 ```bash
+ros2 pkg prefix dmu_vision_bringup
+```
+
+## 正式真实相机入口
+
+```bash
+cd ~/vision_ws
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+
 ros2 launch dmu_vision_bringup vision.launch.py
 ```
 
-默认：
+默认行为：
 
 - `backend:=mvs`
 - 启动相机、YOLO 和视觉障碍物节点
 - 发布稳定 `/vision/*` 接口
 - 不启动图像窗口
+- 真实相机打开失败时关闭整个 launch，不回退 Mock
 
 只启动相机：
 
 ```bash
-ros2 launch dmu_vision_bringup vision.launch.py start_detector:=false start_obstacle:=false
+cd ~/vision_ws
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+
+ros2 launch dmu_vision_bringup vision.launch.py \
+  start_detector:=false start_obstacle:=false
 ```
 
-不启动相机，使用外部图像源：
+使用外部图像源，不启动相机：
 
 ```bash
+cd ~/vision_ws
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+
 ros2 launch dmu_vision_bringup vision.launch.py start_camera:=false
 ```
 
 ## 图像预览
 
-预览进程独立于相机：
+每条命令都需要在已 source 的独立终端中运行。
+
+原始相机图像：
 
 ```bash
-QT_QPA_PLATFORM=xcb ros2 launch dmu_vision_bringup image_viewer.launch.py image_topic:=/camera/image_raw
-QT_QPA_PLATFORM=xcb ros2 launch dmu_vision_bringup image_viewer.launch.py image_topic:=/vision/debug_image
-QT_QPA_PLATFORM=xcb ros2 launch dmu_vision_bringup image_viewer.launch.py image_topic:=/vision/obstacle_debug_image
+cd ~/vision_ws
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+
+QT_QPA_PLATFORM=xcb ros2 launch dmu_vision_bringup image_viewer.launch.py \
+  image_topic:=/camera/image_raw
 ```
 
-关闭预览窗口不会停止相机。
+YOLO 检测框：
+
+```bash
+cd ~/vision_ws
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+
+QT_QPA_PLATFORM=xcb ros2 launch dmu_vision_bringup image_viewer.launch.py \
+  image_topic:=/vision/debug_image
+```
+
+障碍物 ROI：
+
+```bash
+cd ~/vision_ws
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+
+QT_QPA_PLATFORM=xcb ros2 launch dmu_vision_bringup image_viewer.launch.py \
+  image_topic:=/vision/obstacle_debug_image
+```
+
+关闭预览窗口不会停止相机和 YOLO。
 
 ## 其他入口
 
 | 文件 | 用途 |
 |---|---|
 | `vision.launch.py` | 正式统一入口，默认真实 MVS |
-| `camera.launch.py` 所属相机包入口 | 只启动相机 |
 | `preview.launch.py` | 相机 + 可选 image_proc 校正 |
 | `detection.launch.py` | 旧上游 YOLO 启动，保留 `/yolo/cam0/*` |
 | `calibration.launch.py` | Jazzy camera_calibration 流程 |
 | `vision_demo.launch.py` | 旧 Mock 回放演示 |
 
-## Mock 验收
+## 显式 Mock 验收
 
 ```bash
+cd ~/vision_ws
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+
 ros2 launch dmu_vision_bringup vision.launch.py \
   backend:=mock \
   mock_image_path:=$HOME/vision_ws/models/demo_scene.jpg \
