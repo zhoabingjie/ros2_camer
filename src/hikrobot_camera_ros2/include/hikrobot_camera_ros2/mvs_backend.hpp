@@ -40,14 +40,18 @@ struct MvsSdkProbe
 /// @brief Detect the Linux MVS SDK without loading anything.
 MvsSdkProbe probe_sdk(const std::vector<std::string> & extra_lib_candidates = {});
 
+/// Release MVS SDK process-wide resources after all camera backends are closed.
+/// Call this from the executable's controlled shutdown path, not from a static
+/// destructor: the vendor GEV transport plugin performs its own teardown and
+/// static-destructor ordering is unsafe with MVS 5.0.2.
+void finalize_mvs_sdk();
+
 /// @brief Construction parameters for the real camera.
 struct MvsBackendOptions
 {
   std::vector<std::string> sdk_lib_candidates;
 
-  /// Empty is accepted only when exactly one GigE camera is visible. With
-  /// multiple cameras this must be set to the intended serial number.
-  std::string serial_number;
+
   /// Empty = leave the device's current pixel format (we convert to mono8/bgr8).
   /// Any other value is written to the "PixelFormat" node by name, e.g. "Mono8".
   std::string pixel_format;
@@ -80,10 +84,10 @@ private:
   MvsBackendOptions options_;
   mutable std::optional<MvsSdkProbe> probe_;
   void * handle_{nullptr};
-  void * library_{nullptr};
   std::vector<uint8_t> buffer_;
   /// Human-readable list of devices seen by the last enumeration.
   std::string device_summary_;
+  std::string sdk_version_;
 };
 
 }  // namespace hikrobot_camera_ros2

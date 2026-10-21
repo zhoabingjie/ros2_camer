@@ -23,6 +23,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <limits>
 #include <mutex>
 #include <sstream>
 #include <stdexcept>
@@ -40,16 +41,53 @@ namespace hikrobot_camera_ros2
 {
 namespace
 {
+void push_unique(std::vector<std::string> & target, const std::string & value)
+{
+  if (!value.empty() && std::find(target.begin(), target.end(), value) == target.end()) {
+    target.push_back(value);
+  }
+}
+
+std::vector<std::string> sdk_env_roots()
+{
+  std::vector<std::string> roots;
+  for (const char * name : {"MVCAM_SDK_PATH", "MVS_SDK_ROOT", "HIKROBOT_MVS_ROOT"}) {
+    const char * value = std::getenv(name);
+    if (value != nullptr) {push_unique(roots, value);}
+  }
+  return roots;
+}
+
 const std::vector<std::string> & lib_dirs()
 {
-  static const std::vector<std::string> kDirs{
-    "/opt/MVS/lib/64",
-    "/opt/MVS/lib/32",
-    "/opt/MVS/lib/aarch64",
-    "/opt/MVS/lib/arm",
-    "/usr/lib",
-    "/usr/lib/x86_64-linux-gnu",
-    "/usr/local/lib"};
+  static const std::vector<std::string> kDirs = []() {
+      std::vector<std::string> dirs;
+      auto add_root = [&dirs](const std::filesystem::path & root) {
+          push_unique(dirs, (root / "lib" / "64").string());
+          push_unique(dirs, (root / "lib" / "x86_64").string());
+          push_unique(dirs, (root / "lib" / "aarch64").string());
+          push_unique(dirs, (root / "lib" / "32").string());
+          push_unique(dirs, (root / "lib").string());
+        };
+      for (const auto & root : sdk_env_roots()) {add_root(root);}
+      const char * common_runenv = std::getenv("MVCAM_COMMON_RUNENV");
+      if (common_runenv != nullptr) {
+        push_unique(dirs, common_runenv);
+        push_unique(dirs, (std::filesystem::path(common_runenv) / "64").string());
+      }
+#ifdef HIKROBOT_MVS_CONFIGURED_INCLUDE_DIR
+      const auto configured_include = std::filesystem::path(HIKROBOT_MVS_CONFIGURED_INCLUDE_DIR);
+      add_root(configured_include.parent_path().parent_path());
+#endif
+      push_unique(dirs, "/opt/MVS/lib/64");
+      push_unique(dirs, "/opt/MVS/lib/32");
+      push_unique(dirs, "/opt/MVS/lib/aarch64");
+      push_unique(dirs, "/opt/MVS/lib/arm");
+      push_unique(dirs, "/usr/lib");
+      push_unique(dirs, "/usr/lib/x86_64-linux-gnu");
+      push_unique(dirs, "/usr/local/lib");
+      return dirs;
+    }();
   return kDirs;
 }
 
@@ -57,27 +95,35 @@ constexpr const char * kLibPrefix = "libMvCameraControl.so";
 
 const std::vector<std::string> & header_candidates()
 {
-  static const std::vector<std::string> kPaths{
-    "/opt/MVS/include/MvCameraControl.h",
-    "/opt/MVS/include/x86_64/MvCameraControl.h",
-    "/opt/MVS/include/aarch64/MvCameraControl.h",
-    "/usr/include/MvCameraControl.h",
-    "/usr/local/include/MvCameraControl.h"};
+  static const std::vector<std::string> kPaths = []() {
+      std::vector<std::string> paths;
+      auto add_root = [&paths](const std::filesystem::path & root) {
+          push_unique(paths, (root / "include" / "MvCameraControl.h").string());
+          push_unique(paths, (root / "include" / "x86_64" / "MvCameraControl.h").string());
+          push_unique(paths, (root / "include" / "aarch64" / "MvCameraControl.h").string());
+        };
+      for (const auto & root : sdk_env_roots()) {add_root(root);}
+#ifdef HIKROBOT_MVS_CONFIGURED_INCLUDE_DIR
+      push_unique(
+        paths,
+        (std::filesystem::path(HIKROBOT_MVS_CONFIGURED_INCLUDE_DIR) / "MvCameraControl.h").string());
+#endif
+      push_unique(paths, "/opt/MVS/include/MvCameraControl.h");
+      push_unique(paths, "/opt/MVS/include/x86_64/MvCameraControl.h");
+      push_unique(paths, "/opt/MVS/include/aarch64/MvCameraControl.h");
+      push_unique(paths, "/usr/include/MvCameraControl.h");
+      push_unique(paths, "/usr/local/include/MvCameraControl.h");
+      return paths;
+    }();
   return kPaths;
 }
 
 const std::vector<std::string> & env_hints()
 {
   static const std::vector<std::string> kHints{
-    "MVCAM_SDK_PATH", "MVCAM_COMMON_RUNENV", "MVCAM_GENICAM_CLPROTOCOL"};
+    "MVCAM_SDK_PATH", "MVS_SDK_ROOT", "HIKROBOT_MVS_ROOT",
+    "MVCAM_COMMON_RUNENV", "MVCAM_GENICAM_CLPROTOCOL"};
   return kHints;
-}
-
-void push_unique(std::vector<std::string> & target, const std::string & value)
-{
-  if (std::find(target.begin(), target.end(), value) == target.end()) {
-    target.push_back(value);
-  }
 }
 
 /// @brief Files in @p dir whose name starts with @p prefix. Never throws.
@@ -104,6 +150,28 @@ int64_t now_ns()
 {
   using namespace std::chrono;
   return duration_cast<nanoseconds>(system_clock::now().time_since_epoch()).count();
+}
+
+std::size_t checked_image_bytes(int width, int height, std::size_t channels)
+{
+  if (width <= 0 || height <= 0) {
+    throw std::runtime_error(
+            "MVS returned invalid image dimensions: " + std::to_string(width) + "x" +
+            std::to_string(height));
+  }
+  if (channels == 0U) {throw std::invalid_argument("image channel count must be positive");}
+
+  const std::size_t pixels =
+    static_cast<std::size_t>(width) * static_cast<std::size_t>(height);
+  if (pixels > std::numeric_limits<std::size_t>::max() / channels) {
+    throw std::overflow_error("image byte count overflows size_t");
+  }
+  const std::size_t bytes = pixels * channels;
+  if (bytes > std::numeric_limits<unsigned int>::max()) {
+    throw std::overflow_error(
+            "image byte count exceeds MVS API unsigned int limit: " + std::to_string(bytes));
+  }
+  return bytes;
 }
 }  // namespace
 
@@ -146,14 +214,14 @@ MvsSdkProbe probe_sdk(const std::vector<std::string> & extra_lib_candidates)
   probe.searched_lib_dirs = lib_dirs();
   probe.searched_header_paths = header_candidates();
 
-  for (const auto & dir : lib_dirs()) {
-    for (const auto & path : scan_for_prefix(dir, kLibPrefix)) {push_unique(probe.lib_paths, path);}
-  }
   std::error_code ec;
   for (const auto & candidate : extra_lib_candidates) {
     if (!candidate.empty() && std::filesystem::exists(candidate, ec)) {
       push_unique(probe.lib_paths, candidate);
     }
+  }
+  for (const auto & dir : lib_dirs()) {
+    for (const auto & path : scan_for_prefix(dir, kLibPrefix)) {push_unique(probe.lib_paths, path);}
   }
   for (const auto & path : header_candidates()) {
     if (std::filesystem::is_regular_file(path, ec)) {push_unique(probe.header_paths, path);}
@@ -172,6 +240,9 @@ namespace
 struct MvsApi
 {
   void * lib{nullptr};
+  int (*initialize)(){nullptr};
+  int (*finalize)(){nullptr};
+  unsigned int (*get_sdk_version)(){nullptr};
   int (*enum_devices)(unsigned int, MV_CC_DEVICE_INFO_LIST *){nullptr};
   int (*create_handle)(void **, const MV_CC_DEVICE_INFO *){nullptr};
   int (*open_device)(void *, unsigned int, unsigned short){nullptr};
@@ -189,6 +260,7 @@ struct MvsApi
 
   bool load(const std::string & path, std::string & error)
   {
+    *this = MvsApi{};
     lib = ::dlopen(path.c_str(), RTLD_NOW | RTLD_GLOBAL);
     if (lib == nullptr) {
       error = std::string("dlopen(") + path + ") failed: " + ::dlerror();
@@ -202,6 +274,9 @@ struct MvsApi
           ok = false;
         }
       };
+    need(initialize, "MV_CC_Initialize");
+    need(finalize, "MV_CC_Finalize");
+    need(get_sdk_version, "MV_CC_GetSDKVersion");
     need(enum_devices, "MV_CC_EnumDevices");
     need(create_handle, "MV_CC_CreateHandle");
     need(open_device, "MV_CC_OpenDevice");
@@ -217,7 +292,7 @@ struct MvsApi
     need(get_optimal_packet_size, "MV_CC_GetOptimalPacketSize");
     if (!ok) {
       ::dlclose(lib);
-      lib = nullptr;
+      *this = MvsApi{};
     }
     return ok;
   }
@@ -239,35 +314,52 @@ std::string mvs_error_text(int code)
 }
 
 std::mutex g_api_mutex;
+MvsApi g_api;
+bool g_api_loaded = false;
+bool g_api_initialized = false;
 
 MvsApi * ensure_api(const std::vector<std::string> & candidates, std::string & error)
 {
-  static MvsApi api;
-  static bool loaded = false;
   std::lock_guard<std::mutex> lock(g_api_mutex);
-  if (loaded) {
-    if (api.lib == nullptr) {error = "SDK previously failed to load"; return nullptr;}
-    return &api;
+  if (g_api_loaded) {
+    if (g_api.lib == nullptr) {error = "SDK previously failed to load"; return nullptr;}
+    return &g_api;
   }
-  // Prefer the unversioned symlink if present, then whatever the probe found.
-  std::vector<std::string> paths = candidates;
-  if (paths.empty()) {
-    for (const auto & p : probe_sdk().lib_paths) {paths.push_back(p);}
-  }
-  std::sort(
-    paths.begin(), paths.end(), [](const std::string & a, const std::string & b) {
-      return a.size() < b.size();
-    });
+  // Explicit candidates come first. CMake/environment-derived probe paths keep
+  // their discovery order, with /opt/MVS only as a fallback.
+  std::vector<std::string> paths;
+  for (const auto & candidate : candidates) {push_unique(paths, candidate);}
+  for (const auto & path : probe_sdk().lib_paths) {push_unique(paths, path);}
   for (const auto & path : paths) {
     std::string err;
-    if (api.load(path, err)) {
-      loaded = true;
-      return &api;
+    if (!g_api.load(path, err)) {
+      error += (error.empty() ? "" : "; ") + err;
+      continue;
     }
-    error += (error.empty() ? "" : "; ") + err;
+    const int init_rc = g_api.initialize();
+    if (init_rc != MV_OK) {
+      error += (error.empty() ? "" : "; ") +
+        path + ": MV_CC_Initialize failed: " + mvs_error_text(init_rc);
+      ::dlclose(g_api.lib);
+      g_api = MvsApi{};
+      continue;
+    }
+    g_api_loaded = true;
+    g_api_initialized = true;
+    return &g_api;
   }
-  loaded = true;
+  g_api_loaded = true;
   return nullptr;
+}
+
+void finalize_mvs_sdk_locked()
+{
+  if (g_api_initialized && g_api.finalize != nullptr) {
+    (void)g_api.finalize();
+    g_api_initialized = false;
+  }
+  g_api_loaded = false;
+  g_api = MvsApi{};
 }
 
 void set_env_if_unset(const char * key, const std::string & value)
@@ -283,6 +375,17 @@ std::string format_ip(unsigned int ip)
   return os.str();
 }
 
+std::string infer_sdk_root(const std::string & header_path)
+{
+  auto include_dir = std::filesystem::path(header_path).parent_path();
+  const std::string dir_name = include_dir.filename().string();
+  if (dir_name == "x86_64" || dir_name == "aarch64") {
+    include_dir = include_dir.parent_path();
+  }
+  if (include_dir.filename() == "include") {return include_dir.parent_path().string();}
+  return include_dir.string();
+}
+
 std::string normalise_serial(const unsigned char * raw, std::size_t max_len)
 {
   std::size_t len = 0;
@@ -291,6 +394,14 @@ std::string normalise_serial(const unsigned char * raw, std::size_t max_len)
 }
 }  // namespace
 #endif  // HIKROBOT_MVS_AVAILABLE
+
+void finalize_mvs_sdk()
+{
+#ifdef HIKROBOT_MVS_AVAILABLE
+  std::lock_guard<std::mutex> lock(g_api_mutex);
+  finalize_mvs_sdk_locked();
+#endif
+}
 
 MvsBackend::MvsBackend(MvsBackendOptions options)
 : options_(std::move(options))
@@ -323,6 +434,7 @@ std::string MvsBackend::describe() const
 #endif
   os << " sdk_library_found=" << (report.library_found() ? "true" : "false")
      << " sdk_headers_found=" << (report.headers_found() ? "true" : "false");
+  if (!sdk_version_.empty()) {os << " sdk_version=" << sdk_version_;}
   if (!device_summary_.empty()) {os << " " << device_summary_;}
   return os.str();
 }
@@ -346,7 +458,7 @@ void MvsBackend::open()
 #ifdef HIKROBOT_MVS_AVAILABLE
   // The transport-layer plugins (.cti) are located through these variables.
   // Only set them when the user has not, so an explicit configuration wins.
-  const std::string sdk_root = std::filesystem::path(report.header_paths.front()).parent_path().parent_path().string();
+  const std::string sdk_root = infer_sdk_root(report.header_paths.front());
   set_env_if_unset("MVCAM_SDK_PATH", sdk_root);
   set_env_if_unset("MVCAM_COMMON_RUNENV", sdk_root + "/lib");
   set_env_if_unset("MVCAM_SOFTWARE_LIBENV", sdk_root + "/lib");
@@ -357,9 +469,14 @@ void MvsBackend::open()
   if (api == nullptr) {
     throw BackendUnavailableError("failed to load libMvCameraControl: " + load_error);
   }
+  const unsigned int sdk_version = api->get_sdk_version();
+  std::ostringstream version;
+  version << ((sdk_version >> 24) & 0xFFU) << "." << ((sdk_version >> 16) & 0xFFU)
+          << "." << ((sdk_version >> 8) & 0xFFU) << "." << (sdk_version & 0xFFU);
+  sdk_version_ = version.str();
 
   MV_CC_DEVICE_INFO_LIST devices{};
-  int rc = api->enum_devices(MV_GIGE_DEVICE | MV_USB_DEVICE, &devices);
+  int rc = api->enum_devices(MV_GIGE_DEVICE, &devices);
   if (rc != MV_OK) {
     throw std::runtime_error("MV_CC_EnumDevices failed: " + mvs_error_text(rc));
   }
@@ -371,15 +488,11 @@ void MvsBackend::open()
     for (unsigned int i = 0; i < devices.nDeviceNum; ++i) {
       const MV_CC_DEVICE_INFO * info = devices.pDeviceInfo[i];
       if (info == nullptr) {continue;}
-      if ((info->nTLayerType & MV_GIGE_DEVICE) != 0) {
-        const auto & gige = info->SpecialInfo.stGigEInfo;
-        devs << " [GigE model='" << normalise_serial(gige.chModelName, 32)
-             << "' serial='" << normalise_serial(gige.chSerialNumber, 16)
-             << "' ip=" << format_ip(gige.nCurrentIp)
-             << " mask=" << format_ip(gige.nCurrentSubNetMask) << "]";
-      } else {
-        devs << " [non-GigE type=0x" << std::hex << info->nTLayerType << std::dec << "]";
-      }
+      const auto & gige = info->SpecialInfo.stGigEInfo;
+      devs << " [GigE model='" << normalise_serial(gige.chModelName, 32)
+           << "' serial='" << normalise_serial(gige.chSerialNumber, 16)
+           << "' ip=" << format_ip(gige.nCurrentIp)
+           << " mask=" << format_ip(gige.nCurrentSubNetMask) << "]";
     }
     device_summary_ = devs.str();
   }
@@ -387,40 +500,23 @@ void MvsBackend::open()
   if (devices.nDeviceNum == 0) {
     throw BackendUnavailableError(
             std::string("no Hikvision camera found by the MVS SDK (") +
-            device_summary_ + "). Checklist:\n"
+            device_summary_ + ", sdk_version=" + sdk_version_ + "). Checklist:\n"
             "  1. camera powered? (LED on)\n"
             "  2. Ethernet cable from camera to the host/bridged adapter?\n"
             "  3. is the camera on the same L2 segment as this interface?\n"
             "  4. run the SDK's set_rp_filter.sh --mode=2 on the host for cross-subnet discovery");
   }
 
-  const MV_CC_DEVICE_INFO * chosen = nullptr;
-  unsigned int gige_count = 0;
-  for (unsigned int i = 0; i < devices.nDeviceNum; ++i) {
-    const MV_CC_DEVICE_INFO * info = devices.pDeviceInfo[i];
-    if (info == nullptr || (info->nTLayerType & MV_GIGE_DEVICE) == 0) {continue;}
-    ++gige_count;
-    const std::string serial = normalise_serial(info->SpecialInfo.stGigEInfo.chSerialNumber, 16);
-    if (!options_.serial_number.empty() && serial == options_.serial_number) {
-      chosen = info;
-    } else if (options_.serial_number.empty() && chosen == nullptr) {
-      chosen = info;
-    }
-  }
-  if (gige_count == 0) {
+  if (devices.nDeviceNum != 1U) {
     throw BackendUnavailableError(
-            "no GigE camera found by the MVS SDK (" + device_summary_ +
-            "). Check the camera power, cable and network interface.");
+            "single-camera mode requires exactly one GigE camera, but found " +
+            std::to_string(devices.nDeviceNum) + " (" + device_summary_ +
+            "). Disconnect the extra cameras.");
   }
-  if (options_.serial_number.empty() && gige_count > 1) {
+  const MV_CC_DEVICE_INFO * chosen = devices.pDeviceInfo[0];
+  if (chosen == nullptr || (chosen->nTLayerType & MV_GIGE_DEVICE) == 0) {
     throw BackendUnavailableError(
-            "multiple GigE cameras found (" + device_summary_ +
-            "). Set mvs_serial_number to select exactly one camera.");
-  }
-  if (chosen == nullptr) {
-    throw BackendUnavailableError(
-            "no camera matched serial '" + options_.serial_number + "' (" +
-            device_summary_ + ")");
+            "the only enumerated device is not a valid GigE camera (" + device_summary_ + ")");
   }
 
   rc = api->create_handle(&handle_, chosen);
@@ -505,12 +601,14 @@ void MvsBackend::open()
 void MvsBackend::close()
 {
 #ifdef HIKROBOT_MVS_AVAILABLE
-  std::string err;
-  MvsApi * api = ensure_api(options_.sdk_lib_candidates, err);
-  if (api != nullptr && handle_ != nullptr) {
-    (void)api->stop_grabbing(handle_);
-    (void)api->close_device(handle_);
-    (void)api->destroy_handle(handle_);
+  if (handle_ != nullptr) {
+    std::string err;
+    MvsApi * api = ensure_api(options_.sdk_lib_candidates, err);
+    if (api != nullptr) {
+      (void)api->stop_grabbing(handle_);
+      (void)api->close_device(handle_);
+      (void)api->destroy_handle(handle_);
+    }
   }
 #endif
   handle_ = nullptr;
@@ -552,27 +650,47 @@ std::optional<Frame> MvsBackend::grab(double timeout_s)
   // empty instead of being published as if it were a wall-clock time.
   frame.hardware_stamp_ns = std::nullopt;
 
-  const std::size_t src_len = std::min<std::size_t>(info.nFrameLen, buffer_.size());
+  if (info.nFrameLen == 0U) {
+    throw std::runtime_error("MVS returned a frame with nFrameLen=0");
+  }
+  if (info.nFrameLen > buffer_.size()) {
+    throw std::runtime_error(
+            "MVS returned nFrameLen=" + std::to_string(info.nFrameLen) +
+            " but the payload buffer is only " + std::to_string(buffer_.size()) + " bytes");
+  }
 
   if (info.enPixelType == PixelType_Gvsp_Mono8) {
+    const std::size_t expected = checked_image_bytes(frame.width, frame.height, 1U);
+    if (info.nFrameLen < expected) {
+      throw std::runtime_error(
+              "Mono8 frame is shorter than width*height: nFrameLen=" +
+              std::to_string(info.nFrameLen) + " expected>=" + std::to_string(expected));
+    }
     frame.encoding = "mono8";
-    frame.data.assign(buffer_.begin(), buffer_.begin() + static_cast<std::ptrdiff_t>(src_len));
-  } else if (info.enPixelType == PixelType_Gvsp_BGR8_Packed) {
-    frame.encoding = "bgr8";
-    frame.data.assign(buffer_.begin(), buffer_.begin() + static_cast<std::ptrdiff_t>(src_len));
-  } else if (info.enPixelType == PixelType_Gvsp_RGB8_Packed) {
-    frame.encoding = "rgb8";
-    frame.data.assign(buffer_.begin(), buffer_.begin() + static_cast<std::ptrdiff_t>(src_len));
+    frame.data.assign(buffer_.begin(), buffer_.begin() + static_cast<std::ptrdiff_t>(expected));
+  } else if (info.enPixelType == PixelType_Gvsp_BGR8_Packed ||
+    info.enPixelType == PixelType_Gvsp_RGB8_Packed)
+  {
+    const std::size_t expected = checked_image_bytes(frame.width, frame.height, 3U);
+    if (info.nFrameLen < expected) {
+      throw std::runtime_error(
+              "packed color frame is shorter than width*height*3: nFrameLen=" +
+              std::to_string(info.nFrameLen) + " expected>=" + std::to_string(expected));
+    }
+    frame.encoding =
+      info.enPixelType == PixelType_Gvsp_BGR8_Packed ? "bgr8" : "rgb8";
+    frame.data.assign(buffer_.begin(), buffer_.begin() + static_cast<std::ptrdiff_t>(expected));
   } else {
-    // Anything else (Bayer, YUV, packed mono...) is converted to mono8 by the
-    // SDK so downstream nodes never see an encoding they cannot handle.
-    std::vector<uint8_t> converted(static_cast<std::size_t>(frame.width) * frame.height);
+    // Non-direct formats (Bayer, YUV, packed mono...) are converted using the
+    // dimensions reported for this exact frame, never hard-coded dimensions.
+    const std::size_t dst_size = checked_image_bytes(frame.width, frame.height, 1U);
+    std::vector<uint8_t> converted(dst_size);
     MV_CC_PIXEL_CONVERT_PARAM_EX cvt{};
     cvt.nWidth = static_cast<unsigned int>(frame.width);
     cvt.nHeight = static_cast<unsigned int>(frame.height);
     cvt.enSrcPixelType = info.enPixelType;
     cvt.pSrcData = buffer_.data();
-    cvt.nSrcDataLen = static_cast<unsigned int>(src_len);
+    cvt.nSrcDataLen = info.nFrameLen;
     cvt.enDstPixelType = PixelType_Gvsp_Mono8;
     cvt.pDstBuffer = converted.data();
     cvt.nDstBufferSize = static_cast<unsigned int>(converted.size());
@@ -580,7 +698,11 @@ std::optional<Frame> MvsBackend::grab(double timeout_s)
     if (crc != MV_OK) {
       throw std::runtime_error("MV_CC_ConvertPixelTypeEx failed: " + mvs_error_text(crc));
     }
-    converted.resize(cvt.nDstLen);
+    if (cvt.nDstLen != dst_size) {
+      throw std::runtime_error(
+              "MV_CC_ConvertPixelTypeEx returned nDstLen=" +
+              std::to_string(cvt.nDstLen) + " expected=" + std::to_string(dst_size));
+    }
     frame.encoding = "mono8";
     frame.data = std::move(converted);
   }

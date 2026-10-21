@@ -23,12 +23,29 @@ find_package(Threads REQUIRED)
 # The Hikrobot MVS SDK is optional: without it the package still builds and the
 # mock backend works. Detection is done at configure time so a machine without
 # the SDK never needs the vendor headers.
-set(HIKROBOT_MVS_INCLUDE_DIR "/opt/MVS/include" CACHE PATH "Hikrobot MVS SDK include dir")
-if(EXISTS "${HIKROBOT_MVS_INCLUDE_DIR}/MvCameraControl.h")
+set(HIKROBOT_MVS_INCLUDE_DIR "" CACHE PATH "Hikrobot MVS SDK include dir")
+if(NOT HIKROBOT_MVS_INCLUDE_DIR)
+  find_path(HIKROBOT_MVS_INCLUDE_DIR_FOUND
+    NAMES MvCameraControl.h
+    HINTS
+      ENV MVCAM_SDK_PATH
+      ENV MVS_SDK_ROOT
+      ENV HIKROBOT_MVS_ROOT
+    PATH_SUFFIXES include include/x86_64 include/aarch64
+    PATHS
+      /opt/MVS
+      /usr
+      /usr/local
+  )
+  if(HIKROBOT_MVS_INCLUDE_DIR_FOUND)
+    set(HIKROBOT_MVS_INCLUDE_DIR "${HIKROBOT_MVS_INCLUDE_DIR_FOUND}" CACHE PATH
+      "Hikrobot MVS SDK include dir" FORCE)
+  endif()
+endif()
+
+if(HIKROBOT_MVS_INCLUDE_DIR AND EXISTS "${HIKROBOT_MVS_INCLUDE_DIR}/MvCameraControl.h")
   message(STATUS "Hikrobot MVS SDK headers found: ${HIKROBOT_MVS_INCLUDE_DIR} -> real camera support ON")
   add_compile_definitions(HIKROBOT_MVS_AVAILABLE)
-else()
-  message(STATUS "Hikrobot MVS SDK headers NOT found -> real camera backend stays probe-only")
 endif()
 
 add_library(hikrobot_camera_ros2_core
@@ -47,6 +64,14 @@ target_include_directories(hikrobot_camera_ros2_core PUBLIC
   ${OpenCV_INCLUDE_DIRS}
   ${HIKROBOT_MVS_INCLUDE_DIR}
 )
+if(HIKROBOT_MVS_INCLUDE_DIR)
+  target_compile_definitions(hikrobot_camera_ros2_core PRIVATE
+    HIKROBOT_MVS_CONFIGURED_INCLUDE_DIR="${HIKROBOT_MVS_INCLUDE_DIR}"
+  )
+else()
+  message(STATUS "Hikrobot MVS SDK headers NOT found -> real camera backend stays probe-only")
+endif()
+
 target_link_libraries(hikrobot_camera_ros2_core PUBLIC
   rclcpp::rclcpp
   sensor_msgs::sensor_msgs

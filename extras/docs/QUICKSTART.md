@@ -45,21 +45,21 @@ ros2 launch dmu_vision_bringup vision.launch.py
 source /opt/ros/jazzy/setup.bash
 source ~/vision_ws/install/setup.bash
 
-ros2 launch dmu_vision_bringup image_viewer.launch.py \
+QT_QPA_PLATFORM=xcb ros2 launch dmu_vision_bringup image_viewer.launch.py \
   image_topic:=/camera/image_raw
 ```
 
 查看 YOLO 检测框：
 
 ```bash
-ros2 launch dmu_vision_bringup image_viewer.launch.py \
+QT_QPA_PLATFORM=xcb ros2 launch dmu_vision_bringup image_viewer.launch.py \
   image_topic:=/vision/debug_image
 ```
 
 查看障碍物 ROI：
 
 ```bash
-ros2 launch dmu_vision_bringup image_viewer.launch.py \
+QT_QPA_PLATFORM=xcb ros2 launch dmu_vision_bringup image_viewer.launch.py \
   image_topic:=/vision/obstacle_debug_image
 ```
 
@@ -83,12 +83,7 @@ ros2 run dmu_vision_tools vision_health_check --measure 5
 ros2 launch hikrobot_camera_ros2 camera.launch.py backend:=mvs
 ```
 
-多相机时：
-
-```bash
-ros2 launch hikrobot_camera_ros2 camera.launch.py \
-  backend:=mvs mvs_serial_number:=你的序列号
-```
+当前驱动只支持一台 GigE 相机，检测到多台会拒绝启动。
 
 ## 6. 显式离线 Mock
 
@@ -125,7 +120,7 @@ ros2 launch dmu_vision_bringup vision_demo.launch.py
 3. Windows 网口是否显示 `Up` 和有效链路速率。
 4. VMware 是否增加第二块 Bridged 网卡，且没有改动 NAT 网卡。
 5. 主机和相机是否在同一可通信网段。
-6. 多相机时是否设置 `mvs_serial_number`。
+6. 是否同时连接了多台 GigE 相机（单相机模式会拒绝）。
 
 ### YOLO 订阅不到图像
 

@@ -4,7 +4,7 @@
 
 ## 功能
 
-- 通过 Linux MVS SDK 枚举、选择、打开和采集海康 GigE 相机。
+- 通过 Linux MVS SDK 枚举、打开和采集一台海康 GigE 相机。
 - 把原始帧复制为 `sensor_msgs/msg/Image`。
 - 同步发布 `sensor_msgs/msg/CameraInfo`。
 - 未标定时发布 K/P 全零的未标定 CameraInfo，不伪造内参。
@@ -28,7 +28,7 @@
 ros2 launch hikrobot_camera_ros2 camera.launch.py backend:=mvs
 ```
 
-多相机必须指定序列号。启动日志会列出枚举到的型号、序列号、IP 和掩码。
+当前驱动只支持一台 GigE 相机；枚举到 0 台或多台都会拒绝启动。启动日志会列出型号、序列号、IP 和掩码。
 
 离线 Mock：
 
@@ -42,7 +42,6 @@ ros2 launch hikrobot_camera_ros2 camera.launch.py backend:=mock
 |---|---|
 | `backend` | `mvs` |
 | `require_camera_at_startup` | `true` |
-| `mvs_serial_number` | 空 |
 | `mvs_pixel_format` | 空 |
 | `mvs_exposure_us` | 0 |
 | `mvs_gain` | 0 |

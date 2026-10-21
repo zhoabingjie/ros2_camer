@@ -1,4 +1,89 @@
 # 测试报告
+## 2026-10-21 MVS 参考实现审计与驱动加固
+
+参考仓库：`https://github.com/Chlzzz/HikRobotCamera_Node`。
+
+本次未连接真实相机，不包含真实验收结论。
+
+### 构建
+
+```bash
+colcon build --symlink-install --packages-select hikrobot_camera_ros2 --cmake-clean-cache
+```
+
+结果：
+
+```text
+Finished <<< hikrobot_camera_ros2
+BUILD_RC=0
+HIKROBOT_MVS_INCLUDE_DIR=/opt/MVS/include
+CXX_DEFINES: -DHIKROBOT_MVS_AVAILABLE
+```
+
+### 相机包测试
+
+```bash
+colcon test --packages-select hikrobot_camera_ros2 --parallel-workers 1
+colcon test-result --verbose
+```
+
+结果：
+
+```text
+404 tests, 0 errors, 0 failures, 10 skipped
+TEST_RC=0 RESULT_RC=0
+```
+
+### 无相机启动
+
+```bash
+ros2 run hikrobot_camera_ros2 camera_node --ros-args -p backend:=mvs
+```
+
+结果：
+
+```text
+CAMERA_NO_HARDWARE_RC=1
+no Hikvision camera found by the MVS SDK (devices=0, sdk_version=4.8.1.2)
+camera driver startup failed
+```
+
+该测试同时验证了受控 `MV_CC_Finalize` 路径，进程返回 1 且没有 `SIGSEGV`。
+
+### 全工作区回归
+
+结果：
+
+```text
+404 tests, 0 errors, 0 failures, 10 skipped
+```
+
+### 显式 Mock 端到端
+
+```bash
+ros2 launch dmu_vision_bringup vision.launch.py backend:=mock \
+  mock_image_path:=$HOME/vision_ws/models/demo_scene.jpg \
+  mock_encoding:=bgr8 mock_fps:=8.0 start_rectify:=false
+```
+
+实测节点：
+
+```text
+/camera_node
+/yolo/yolo_node
+/visual_obstacle_node
+```
+
+实测 `/camera/image_raw` 约 `4.7 Hz`，YOLO 检测和视觉障碍物节点正常运行。该结果只证明 Mock 链路，不代表真实相机取流成功。
+
+### 真实验证状态
+
+- 当前未连接相机。
+- MVS 枚举为 `devices=0`。
+- 真实设备打开、真实图像发布、`rqt_image_view` 实机画面未验证。
+- 不得将上述 Mock 测试描述为真实相机通过。
+
+---
 
 ## 2026-10-20 重整后完整验证
 
@@ -687,7 +772,7 @@ error_lines=0
 | 步骤 | 使用的 API（全部来自真实头文件） |
 | --- | --- |
 | 加载库 | `dlopen` + `dlsym`（13 个符号，缺一个就报出名字） |
-| 枚举 | `MV_CC_EnumDevices(MV_GIGE_DEVICE \| MV_USB_DEVICE, &list)` |
+| 枚举 | `MV_CC_EnumDevices(MV_GIGE_DEVICE, &list)` |
 | 建句柄 | `MV_CC_CreateHandle` |
 | 打开 | `MV_CC_OpenDevice(handle, MV_ACCESS_Exclusive, 0)` |
 | 参数 | `MV_CC_SetEnumValue("PixelFormat"/"ExposureAuto"/"GainAuto")`、`MV_CC_SetIntValueEx("Width"/"Height"/"ExposureTime"/"Gain"/"GevSCPSPacketSize")` |

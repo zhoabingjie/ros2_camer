@@ -1,5 +1,16 @@
 # 海康 MV-CS050-10GM 相机接入
 
+## 2026-10-21 驱动加固
+
+- 已根据当前 MVS 头文件加入 `MV_CC_Initialize`。
+- `MV_CC_Finalize` 在所有相机句柄释放后，由 `camera_main` 受控调用。
+- 未将 `Finalize` 放入静态析构器；实测 MVS 5.0.2 的 GEV 插件在该顺序下会崩溃。
+- CMake 优先搜索环境变量和实际安装路径，`/opt/MVS` 仅作为回退。
+- 采集转换严格使用实际帧宽高和 `nFrameLen`，不复制参考项目的固定 `1280x1024`。
+- 运行时 SDK 版本实测为 `4.8.1.2`，与当前 `libMvCameraControl.so.4.8.1.2` 一致。
+
+详细对比见 `extras/docs/MVS_REFERENCE_COMPARISON.md`。
+
 ## 1. 实现状态
 
 | 项目 | 状态 |
@@ -98,12 +109,7 @@ ros2 run hikrobot_camera_ros2 camera_node \
 devices=1 [GigE model='MV-CS050-10GM' serial='...' ip=... mask=...]
 ```
 
-多相机时必须指定：
-
-```bash
-ros2 launch hikrobot_camera_ros2 camera.launch.py \
-  backend:=mvs mvs_serial_number:=实际序列号
-```
+当前驱动只支持一台 GigE 相机；检测到 0 台或多台都会拒绝启动。
 
 ## 5. 参数
 
@@ -111,7 +117,6 @@ ros2 launch hikrobot_camera_ros2 camera.launch.py \
 |---|---|
 | `backend` | `mvs` 或显式 `mock` |
 | `require_camera_at_startup` | 启动失败是否返回非零 |
-| `mvs_serial_number` | 多相机选择 |
 | `mvs_pixel_format` | `Mono8`、`BGR8`、`RGB8` |
 | `mvs_width` / `mvs_height` | 0 表示保持相机当前值 |
 | `mvs_exposure_us` | 0 表示保持当前值 |
@@ -123,7 +128,7 @@ ros2 launch hikrobot_camera_ros2 camera.launch.py \
 
 - SDK 未找到：列出搜索路径。
 - 相机数为 0：输出电源、网线、L2 网段和 `rp_filter` 检查清单。
-- 多相机未指定序列号：拒绝启动并列出设备。
+- 枚举到的 GigE 相机数量不是 1：拒绝启动并列出设备。
 - 打开设备失败：提示可能被 MVS 客户端或其他程序占用。
 - 取流异常：关闭并重新打开后端。
 - 退出：停止采集、关闭设备、销毁句柄。

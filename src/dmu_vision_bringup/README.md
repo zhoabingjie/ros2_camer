@@ -1,6 +1,14 @@
 # dmu_vision_bringup
 
-视觉模块启动与参数编排包。它不包含视觉算法，只负责组合相机、YOLO、障碍物和预览入口。
+视觉模块启动与参数编排包。
+
+每个新终端都需要先加载环境：
+
+```bash
+cd ~/vision_ws
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+```它不包含视觉算法，只负责组合相机、YOLO、障碍物和预览入口。
 
 ## 正式入口
 
@@ -32,9 +40,9 @@ ros2 launch dmu_vision_bringup vision.launch.py start_camera:=false
 预览进程独立于相机：
 
 ```bash
-ros2 launch dmu_vision_bringup image_viewer.launch.py image_topic:=/camera/image_raw
-ros2 launch dmu_vision_bringup image_viewer.launch.py image_topic:=/vision/debug_image
-ros2 launch dmu_vision_bringup image_viewer.launch.py image_topic:=/vision/obstacle_debug_image
+QT_QPA_PLATFORM=xcb ros2 launch dmu_vision_bringup image_viewer.launch.py image_topic:=/camera/image_raw
+QT_QPA_PLATFORM=xcb ros2 launch dmu_vision_bringup image_viewer.launch.py image_topic:=/vision/debug_image
+QT_QPA_PLATFORM=xcb ros2 launch dmu_vision_bringup image_viewer.launch.py image_topic:=/vision/obstacle_debug_image
 ```
 
 关闭预览窗口不会停止相机。

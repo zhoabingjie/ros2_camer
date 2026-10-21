@@ -37,12 +37,7 @@ ros2 launch dmu_vision_bringup vision.launch.py
 ros2 launch hikrobot_camera_ros2 camera.launch.py backend:=mvs
 ```
 
-多台 GigE 相机必须指定序列号：
-
-```bash
-ros2 launch hikrobot_camera_ros2 camera.launch.py \
-  backend:=mvs mvs_serial_number:=你的相机序列号
-```
+当前驱动只支持一台 GigE 相机；枚举到 0 台会报错，枚举到多台也会拒绝启动。
 
 ## 查看图像和检测结果
 
@@ -53,15 +48,15 @@ source /opt/ros/jazzy/setup.bash
 source ~/vision_ws/install/setup.bash
 
 # 原始相机图像
-ros2 launch dmu_vision_bringup image_viewer.launch.py \
+QT_QPA_PLATFORM=xcb ros2 launch dmu_vision_bringup image_viewer.launch.py \
   image_topic:=/camera/image_raw
 
 # YOLO 检测框
-ros2 launch dmu_vision_bringup image_viewer.launch.py \
+QT_QPA_PLATFORM=xcb ros2 launch dmu_vision_bringup image_viewer.launch.py \
   image_topic:=/vision/debug_image
 
 # 障碍物 ROI 和候选框
-ros2 launch dmu_vision_bringup image_viewer.launch.py \
+QT_QPA_PLATFORM=xcb ros2 launch dmu_vision_bringup image_viewer.launch.py \
   image_topic:=/vision/obstacle_debug_image
 ```
 
@@ -136,6 +131,7 @@ ros2 launch dmu_vision_bringup vision_demo.launch.py
 
 - `extras/docs/ENVIRONMENT_AUDIT.md`：环境与源码审计。
 - `extras/docs/CAMERA_DRIVER.md`：相机接入和 GigE 排查。
+- `extras/docs/MVS_REFERENCE_COMPARISON.md`：参考驱动对比和本次加固记录。
 - `extras/docs/INTERFACES.md`：节点、Topic、QoS 和参数。
 - `extras/docs/MIGRATION.md`：旧接口到稳定接口的迁移说明。
 - `extras/docs/QUICKSTART.md`：快速启动。

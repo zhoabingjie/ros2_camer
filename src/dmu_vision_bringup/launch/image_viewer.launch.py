@@ -20,7 +20,9 @@ def generate_launch_description():
                 executable="rqt_image_view",
                 name="vision_image_viewer",
                 output="screen",
-                remappings=[("image", image_topic)],
+                # rqt_image_view expects the topic as a positional plugin argument;
+                # an "image:=..." ROS remap does not override its saved GUI selection.
+                arguments=[image_topic],
             ),
         ]
     )

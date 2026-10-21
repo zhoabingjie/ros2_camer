@@ -157,7 +157,6 @@ void CameraNode::declare_parameters()
   declare_parameter<std::vector<std::string>>("sdk_lib_candidates", std::vector<std::string>{""});
 
   // --- real camera (mvs backend) ---
-  declare_parameter<std::string>("mvs_serial_number", "");
   declare_parameter<std::string>("mvs_pixel_format", "");
   declare_parameter<int>("mvs_width", 0);
   declare_parameter<int>("mvs_height", 0);
@@ -202,7 +201,6 @@ CameraNode::Config CameraNode::read_config()
   for (const auto & candidate : candidates) {
     if (!candidate.empty()) {config.mvs.sdk_lib_candidates.push_back(candidate);}
   }
-  config.mvs.serial_number = get_parameter("mvs_serial_number").as_string();
   config.mvs.pixel_format = get_parameter("mvs_pixel_format").as_string();
   config.mvs.width = static_cast<int>(get_parameter("mvs_width").as_int());
   config.mvs.height = static_cast<int>(get_parameter("mvs_height").as_int());

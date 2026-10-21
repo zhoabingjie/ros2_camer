@@ -37,7 +37,6 @@ def generate_launch_description():
     backend = LaunchConfiguration("backend")
     frame_id = LaunchConfiguration("frame_id")
     calibration_file = LaunchConfiguration("calibration_file")
-    serial = LaunchConfiguration("mvs_serial_number")
     yolo_input = LaunchConfiguration("yolo_input_topic")
     mock_image_path = LaunchConfiguration("mock_image_path")
     mock_encoding = LaunchConfiguration("mock_encoding")
@@ -62,7 +61,6 @@ def generate_launch_description():
                 "frame_id": frame_id,
                 "calibration_file": calibration_file,
                 "require_camera_at_startup": True,
-                "mvs_serial_number": serial,
                 "mock_image_path": mock_image_path,
                 "mock_encoding": mock_encoding,
                 "mock_fps": mock_fps,
@@ -133,7 +131,6 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument("frame_id", default_value="camera_optical_frame"),
             DeclareLaunchArgument("calibration_file", default_value=""),
-            DeclareLaunchArgument("mvs_serial_number", default_value=""),
             DeclareLaunchArgument("yolo_input_topic", default_value="/camera/image_raw"),
             DeclareLaunchArgument(
                 "mock_image_path",

@@ -31,7 +31,6 @@
 | `camera_info_topic` | `/camera/camera_info` | 内参话题 |
 | `status_topic` | `/vision/status` | 诊断话题 |
 | `calibration_file` | 空 | 空表示未标定；不得伪造内参 |
-| `mvs_serial_number` | 空 | 多相机时必须指定序列号 |
 | `mvs_pixel_format` | 空 | `Mono8`、`BGR8`、`RGB8` |
 | `mvs_width` / `mvs_height` | 0 | 0 表示保持设备当前值 |
 | `mvs_exposure_us` | 0 | 0 表示保持当前值 |
