@@ -34,7 +34,7 @@ ros2 launch dmu_vision_bringup vision.launch.py
 - 启动相机、YOLO 和视觉障碍物节点
 - 发布稳定 `/vision/*` 接口
 - 不启动图像窗口
-- 真实相机打开失败时关闭整个 launch，不回退 Mock
+- 真实相机打开失败时关闭整个 launch
 
 只启动相机：
 
@@ -104,21 +104,6 @@ QT_QPA_PLATFORM=xcb ros2 launch dmu_vision_bringup image_viewer.launch.py \
 | `preview.launch.py` | 相机 + 可选 image_proc 校正 |
 | `detection.launch.py` | 旧上游 YOLO 启动，保留 `/yolo/cam0/*` |
 | `calibration.launch.py` | Jazzy camera_calibration 流程 |
-| `vision_demo.launch.py` | 旧 Mock 回放演示 |
 
-## 显式 Mock 验收
-
-```bash
-cd ~/vision_ws
-source /opt/ros/jazzy/setup.bash
-source install/setup.bash
-
-ros2 launch dmu_vision_bringup vision.launch.py \
-  backend:=mock \
-  mock_image_path:=$HOME/vision_ws/models/demo_scene.jpg \
-  mock_encoding:=bgr8 \
-  mock_fps:=8.0 \
-  start_rectify:=false
-```
 
 稳定接口说明见 `extras/docs/INTERFACES.md`。

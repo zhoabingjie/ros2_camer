@@ -6,7 +6,7 @@
 
 | 节点 | 包 | 作用 |
 |---|---|---|
-| `/camera_node` | `hikrobot_camera_ros2` | 真实 MVS 或显式 Mock 图像源 |
+| `/camera_node` | `hikrobot_camera_ros2` | 真实 MVS 单相机图像源 |
 | `/yolo/yolo_node` | `yolo_ros` | YOLO 2D 检测、跟踪和 debug image |
 | `/visual_obstacle_node` | `visual_obstacle_avoidance` | 二维障碍物候选筛选与状态输出 |
 
@@ -24,7 +24,6 @@
 
 | 参数 | 默认值 | 说明 |
 |---|---|---|
-| `backend` | `mvs` | `mvs` 真实相机；`mock` 仅显式离线 |
 | `require_camera_at_startup` | `true` | 后端打不开时进程返回非零 |
 | `frame_id` | `camera_optical_frame` | Image 和 CameraInfo 共用 |
 | `image_topic` | `/camera/image_raw` | 图像话题 |
@@ -40,7 +39,7 @@
 ### 启动
 
 ```bash
-ros2 launch hikrobot_camera_ros2 camera.launch.py backend:=mvs
+ros2 launch hikrobot_camera_ros2 camera.launch.py
 ```
 
 ## 3. YOLO 节点

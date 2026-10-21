@@ -13,8 +13,8 @@
 //   perception-only by project rule; the chassis is driven by the control stack.
 //
 // Honesty rules enforced here:
-//   * No fabricated pixels: frames come from a backend, and a backend that cannot
-//     run throws instead of synthesising data.
+//   * No fabricated pixels: frames come from the real MVS backend, which fails
+//     loudly instead of synthesising data.
 //   * No fabricated intrinsics: uncalibrated output is the ROS all-zero marker.
 //   * No stale data: if the stream stalls, image publishing stops (the watchdog
 //     reports it) rather than repeating the last frame.
@@ -38,7 +38,6 @@
 
 #include "hikrobot_camera_ros2/camera_backend.hpp"
 #include "hikrobot_camera_ros2/camera_info_factory.hpp"
-#include "hikrobot_camera_ros2/mock_backend.hpp"
 #include "hikrobot_camera_ros2/mvs_backend.hpp"
 #include "hikrobot_camera_ros2/stream_health.hpp"
 
@@ -59,7 +58,6 @@ public:
   void stop();
 
   const StreamHealthMonitor & health() const {return *health_;}
-  const std::string & configured_backend() const {return config_.backend;}
   const std::string & frame_id() const {return config_.frame_id;}
 
   /// @brief Topics this node advertises.
@@ -71,7 +69,6 @@ public:
 private:
   struct Config
   {
-    std::string backend{"mvs"};
     std::string frame_id{"camera_optical_frame"};
     std::string image_topic{"/camera/image_raw"};
     std::string camera_info_topic{"/camera/camera_info"};
@@ -84,7 +81,6 @@ private:
     std::string qos_reliability{"best_effort"};
     int qos_depth{5};
     bool require_camera_at_startup{true};
-    MockBackendOptions mock;
     MvsBackendOptions mvs;
   };
 

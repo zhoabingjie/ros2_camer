@@ -2,18 +2,17 @@
 
 适用环境：Ubuntu 24.04 + ROS 2 Jazzy + C++17。当前相机：海康 `MV-CS050-10GM`（GigE）。
 
-## 当前状态（2026-10-20）
+## 当前状态（2026-10-21）
 
 - Linux MVS x86_64 SDK 已安装并可加载。
 - 相机驱动支持真实 MVS 后端和设备枚举，可打印型号、序列号、IP。
 - 正式入口默认使用真实 MVS；相机缺失时明确报错并以非零状态退出。
-- Mock 后端保留，但必须显式指定。
+- 生产代码只支持真实 MVS 相机，不包含 Mock 或图片回放后端。
 - 图像预览与相机驱动解耦。
 - YOLO 2D 检测、跟踪和 debug image 已接入。
 - 新增二维视觉障碍物接口和节点，不输出伪造距离，不控制 `/cmd_vel`。
 - 完整构建：10 个包通过。
-- 完整测试：`404 tests / 0 failures / 0 errors / 10 skipped`。
-- Mock 端到端验证：图像约 `7 Hz`；实际输出 `bus 0.882`、`person 0.831`；`/vision/obstacles` 状态为 `OBSTACLE`。
+- 完整测试：`389 tests / 0 failures / 0 errors / 10 skipped`。
 - **真实相机取流尚未验收**：当前 VMware 没有相机用桥接网卡，MVS 实测 `devices=0`。
 
 ## 正式启动
@@ -38,7 +37,7 @@ cd ~/vision_ws
 source /opt/ros/jazzy/setup.bash
 source install/setup.bash
 
-ros2 launch hikrobot_camera_ros2 camera.launch.py backend:=mvs
+ros2 launch hikrobot_camera_ros2 camera.launch.py
 ```
 
 当前驱动只支持一台 GigE 相机；枚举到 0 台会报错，枚举到多台也会拒绝启动。
@@ -80,30 +79,6 @@ ros2 topic echo --once /vision/obstacles
 ros2 run dmu_vision_tools vision_health_check --measure 5
 ```
 
-## 显式离线 Mock
-
-```bash
-cd ~/vision_ws
-source /opt/ros/jazzy/setup.bash
-source install/setup.bash
-
-ros2 launch dmu_vision_bringup vision.launch.py \
-  backend:=mock \
-  mock_image_path:=$HOME/vision_ws/models/demo_scene.jpg \
-  mock_encoding:=bgr8 \
-  mock_fps:=8.0 \
-  start_rectify:=false
-```
-
-旧回放演示仍保留：
-
-```bash
-cd ~/vision_ws
-source /opt/ros/jazzy/setup.bash
-source install/setup.bash
-
-ros2 launch dmu_vision_bringup vision_demo.launch.py
-```
 
 ## 稳定接口
 
@@ -125,7 +100,7 @@ ros2 launch dmu_vision_bringup vision_demo.launch.py
 
 | 包 | 作用 |
 |---|---|
-| `hikrobot_camera_ros2` | 海康 GigE 相机驱动、Mock 后端、Image/CameraInfo/诊断发布 |
+| `hikrobot_camera_ros2` | 海康 GigE 真实相机驱动、Image/CameraInfo/诊断发布 |
 | `dmu_vision_bringup` | 正式统一启动、预览、标定和参数编排 |
 | `dmu_vision_interfaces` | 团队稳定消息接口 |
 | `visual_obstacle_avoidance` | 单目二维障碍物筛选和状态输出 |

@@ -9,8 +9,8 @@
 // acquisition path is compiled in.
 //
 // The vendor library is loaded with dlopen() rather than linked, on purpose:
-// `camera_node` must keep starting on machines without the SDK so the mock
-// backend keeps working. A hard link dependency would break that.
+// package builds and SDK diagnostics still work without a hard vendor-link
+// dependency, while real capture is enabled only when the SDK is installed.
 //
 // Every symbol below was read from the SDK's own headers
 // (/opt/MVS/include/MvCameraControl.h, CameraParams.h, MvErrorDefine.h,

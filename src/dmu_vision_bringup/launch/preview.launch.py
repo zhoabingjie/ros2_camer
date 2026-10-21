@@ -30,12 +30,10 @@ def generate_launch_description():
     )
 
     camera_params_file = LaunchConfiguration("camera_params_file")
-    backend = LaunchConfiguration("backend")
     require_camera = LaunchConfiguration("require_camera_at_startup")
     frame_id = LaunchConfiguration("frame_id")
     calibration_file = LaunchConfiguration("calibration_file")
     start_rectify = LaunchConfiguration("start_rectify")
-    mock_pattern = LaunchConfiguration("mock_pattern")
 
     camera_node = Node(
         package="hikrobot_camera_ros2",
@@ -45,11 +43,9 @@ def generate_launch_description():
         parameters=[
             camera_params_file,
             {
-                "backend": backend,
                 "frame_id": frame_id,
                 "calibration_file": calibration_file,
                 "require_camera_at_startup": require_camera,
-                "mock_pattern": mock_pattern,
             },
         ],
     )
@@ -81,11 +77,6 @@ def generate_launch_description():
                 description="hikrobot_camera_ros2 parameter file",
             ),
             DeclareLaunchArgument(
-                "backend",
-                default_value="mvs",
-                description="'mvs' for the real camera; 'mock' only for explicit offline testing",
-            ),
-            DeclareLaunchArgument(
                 "frame_id",
                 default_value="camera_optical_frame",
                 description="frame_id stamped on Image and CameraInfo",
@@ -96,14 +87,6 @@ def generate_launch_description():
                 description=(
                     "camera_calibration YAML. Empty means uncalibrated; image_proc then "
                     "passes the image through instead of rectifying with invented intrinsics."
-                ),
-            ),
-            DeclareLaunchArgument(
-                "mock_pattern",
-                default_value="moving_bar",
-                description=(
-                    "mock backend pattern. Use 'gradient' for a time-invariant frame, which "
-                    "makes raw-vs-rect pixel comparison meaningful in verification scripts."
                 ),
             ),
             DeclareLaunchArgument(

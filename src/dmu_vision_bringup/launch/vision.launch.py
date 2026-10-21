@@ -1,8 +1,6 @@
 """Formal vision pipeline.
 
-Default source is the real Hikvision MVS camera. Mock operation is explicit:
-
-    ros2 launch dmu_vision_bringup vision.launch.py backend:=mock
+The source is always the real Hikvision MVS camera.
 
 Stable interfaces from this launch:
   /camera/image_raw        sensor_msgs/msg/Image
@@ -34,14 +32,9 @@ def generate_launch_description():
 
     camera_params = LaunchConfiguration("camera_params_file")
     yolo_params = LaunchConfiguration("yolo_params_file")
-    backend = LaunchConfiguration("backend")
     frame_id = LaunchConfiguration("frame_id")
     calibration_file = LaunchConfiguration("calibration_file")
     yolo_input = LaunchConfiguration("yolo_input_topic")
-    mock_image_path = LaunchConfiguration("mock_image_path")
-    mock_encoding = LaunchConfiguration("mock_encoding")
-    mock_fps = LaunchConfiguration("mock_fps")
-    mock_pattern = LaunchConfiguration("mock_pattern")
     start_camera = LaunchConfiguration("start_camera")
     start_detector = LaunchConfiguration("start_detector")
     start_obstacle = LaunchConfiguration("start_obstacle")
@@ -57,14 +50,9 @@ def generate_launch_description():
         parameters=[
             camera_params,
             {
-                "backend": backend,
                 "frame_id": frame_id,
                 "calibration_file": calibration_file,
                 "require_camera_at_startup": True,
-                "mock_image_path": mock_image_path,
-                "mock_encoding": mock_encoding,
-                "mock_fps": mock_fps,
-                "mock_pattern": mock_pattern,
             },
         ],
     )
@@ -116,11 +104,6 @@ def generate_launch_description():
     return LaunchDescription(
         [
             DeclareLaunchArgument(
-                "backend",
-                default_value="mvs",
-                description="Real Hikvision backend by default; use 'mock' only for offline testing",
-            ),
-            DeclareLaunchArgument(
                 "camera_params_file",
                 default_value=os.path.join(camera_share, "config", "camera.yaml"),
             ),
@@ -132,14 +115,6 @@ def generate_launch_description():
             DeclareLaunchArgument("frame_id", default_value="camera_optical_frame"),
             DeclareLaunchArgument("calibration_file", default_value=""),
             DeclareLaunchArgument("yolo_input_topic", default_value="/camera/image_raw"),
-            DeclareLaunchArgument(
-                "mock_image_path",
-                default_value="",
-                description="Still image used only when backend:=mock is explicit",
-            ),
-            DeclareLaunchArgument("mock_encoding", default_value="bgr8"),
-            DeclareLaunchArgument("mock_fps", default_value="10.0"),
-            DeclareLaunchArgument("mock_pattern", default_value="moving_bar"),
             DeclareLaunchArgument(
                 "visual_obstacle_params_file",
                 default_value=os.path.join(

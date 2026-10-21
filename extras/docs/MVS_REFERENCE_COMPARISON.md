@@ -19,7 +19,7 @@
 
 | 功能 | 当前 `ros2_camer` | 参考 `HikRobotCamera_Node` | 结论 |
 |---|---|---|---|
-| SDK 加载 | `dlopen` 动态加载 | CMake 直接链接 | 当前方式保留，Mock 机器仍可构建 |
+| SDK 加载 | `dlopen` 动态加载 | CMake 直接链接 | 当前方式保留，缺少 SDK 时仍可构建并报告 |
 | SDK 路径 | CMake、环境变量、实际探测路径 | 写死 `/opt/MVS/include`、`/opt/MVS/lib/64` | 已进一步改为优先实际路径 |
 | SDK 初始化 | 已调用 `MV_CC_Initialize` | 未显式调用 | 已补齐 |
 | SDK 反初始化 | 相机进程 `main` 受控调用 `MV_CC_Finalize` | 未调用 | 已补齐并避开静态析构崩溃 |
@@ -98,7 +98,8 @@
 | ROS 2 | Jazzy |
 | 构建 | 通过 |
 | 相机包测试 | 通过 |
-| 全工作区测试 | 404 tests / 0 failures / 0 errors |
+| Mock/图片回放代码 | 已删除 |
+| 全工作区测试 | 389 tests / 0 failures / 0 errors |
 | 无相机启动 | 返回码 1，明确报错，Finalize 后无崩溃 |
 | 真实相机枚举 | `devices=0`，当前未连接相机 |
 | 真实图像发布与取流 | **未验证** |

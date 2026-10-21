@@ -20,7 +20,6 @@
 | 真实 MVS API | 已按 SDK 头文件实现 |
 | 相机枚举 | 已实现，失败时输出检查清单 |
 | 真实取流 | **未完成硬件验收** |
-| Mock 后端 | 已实现，必须显式启用 |
 
 当前 MVS 实测：
 
@@ -115,7 +114,6 @@ devices=1 [GigE model='MV-CS050-10GM' serial='...' ip=... mask=...]
 
 | 参数 | 含义 |
 |---|---|
-| `backend` | `mvs` 或显式 `mock` |
 | `require_camera_at_startup` | 启动失败是否返回非零 |
 | `mvs_pixel_format` | `Mono8`、`BGR8`、`RGB8` |
 | `mvs_width` / `mvs_height` | 0 表示保持相机当前值 |

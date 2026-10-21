@@ -1,6 +1,6 @@
 # 快速上手
 
-当前正式入口默认真实海康 MVS 相机；只有显式指定 `backend:=mock` 才使用离线图像。
+当前正式入口只使用真实海康 MVS 相机，不包含 Mock 或图片回放后端。
 
 ## 1. 构建
 
@@ -39,7 +39,7 @@ ros2 launch dmu_vision_bringup vision.launch.py
 /vision/status
 ```
 
-如果 MVS 找不到相机，进程会打印可操作错误并返回非零，不会退回 Mock。
+如果 MVS 找不到相机，进程会打印可操作错误并返回非零，不会改用其他图像源。
 
 ## 3. 查看实时图像
 
@@ -101,44 +101,20 @@ cd ~/vision_ws
 source /opt/ros/jazzy/setup.bash
 source install/setup.bash
 
-ros2 launch hikrobot_camera_ros2 camera.launch.py backend:=mvs
+ros2 launch hikrobot_camera_ros2 camera.launch.py
 ```
 
 当前驱动只支持一台 GigE 相机，检测到多台会拒绝启动。
 
-## 6. 显式离线 Mock
 
-```bash
-cd ~/vision_ws
-source /opt/ros/jazzy/setup.bash
-source install/setup.bash
-
-ros2 launch dmu_vision_bringup vision.launch.py \
-  backend:=mock \
-  mock_image_path:=$HOME/vision_ws/models/demo_scene.jpg \
-  mock_encoding:=bgr8 \
-  mock_fps:=8.0 \
-  start_rectify:=false
-```
-
-旧回放 Demo：
-
-```bash
-cd ~/vision_ws
-source /opt/ros/jazzy/setup.bash
-source install/setup.bash
-
-ros2 launch dmu_vision_bringup vision_demo.launch.py
-```
-
-## 7. 当前硬件状态
+## 6. 当前硬件状态
 
 - Linux MVS SDK 已安装。
 - 当前 MVS 枚举：`devices=0`。
 - 当前 VMware 没有相机桥接网卡，宿主 Realtek 以太网仍为 `Disconnected / 0 bps`。
 - 因此真实相机取流、真实预览和标定仍未验收。
 
-## 8. 常见错误
+## 7. 常见错误
 
 ### `no Hikvision camera found`
 

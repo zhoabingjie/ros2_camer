@@ -30,7 +30,7 @@ colcon test-result --verbose
 结果：
 
 ```text
-404 tests, 0 errors, 0 failures, 10 skipped
+389 tests, 0 errors, 0 failures, 10 skipped
 TEST_RC=0 RESULT_RC=0
 ```
 
@@ -55,7 +55,7 @@ camera driver startup failed
 结果：
 
 ```text
-404 tests, 0 errors, 0 failures, 10 skipped
+389 tests, 0 errors, 0 failures, 10 skipped
 ```
 
 ### 显式 Mock 端到端
@@ -192,6 +192,8 @@ camera driver startup failed: required camera backend 'mvs' could not be opened
 
 
 本文件按阶段累积。所有数值均为实测输出，未编造。
+
+> 2026-10-21 更新：Mock 后端、`vision_demo.launch.py` 和 `image_file_source` 已从代码中删除。下面历史章节中的 Mock/回放记录仅用于保留历史证据，不代表当前代码仍提供这些入口。
 
 ## Phase 1 — 相机最小接入（离线部分，C++17 / rclcpp）
 

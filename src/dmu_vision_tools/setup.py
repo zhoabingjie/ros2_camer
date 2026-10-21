@@ -21,7 +21,6 @@ setup(
     entry_points={
         "console_scripts": [
             "vision_health_check = dmu_vision_tools.health_check:main",
-            "image_file_source = dmu_vision_tools.image_file_source:main",
             "measure_detection = dmu_vision_tools.measure_detection:main",
         ],
     },

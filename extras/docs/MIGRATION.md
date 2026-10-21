@@ -79,19 +79,6 @@
 | 必须直接运行上游 YOLO launch | 新增 `vision.launch.py` 统一入口 |
 | 没有视觉障碍物节点 | 新增独立 C++ 节点 |
 
-Mock 模式仍然完全可用：
-
-```bash
-ros2 launch dmu_vision_bringup vision.launch.py backend:=mock \
-  mock_image_path:=$HOME/vision_ws/models/demo_scene.jpg \
-  mock_encoding:=bgr8
-```
-
-旧回放演示入口保持不变：
-
-```bash
-ros2 launch dmu_vision_bringup vision_demo.launch.py
-```
 
 ## 5. 下游迁移建议
 

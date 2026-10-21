@@ -18,12 +18,12 @@
 | Jazzy 依赖 | `image_proc`、`image_view`、`rqt_image_view`、`camera_calibration`、`cv_bridge` 可用 |
 | 上游 YOLO | `yolo_msgs`、`yolo_ros`、`yolo_bringup` 由工作区构建 |
 | 构建 | 10 个包构建通过 |
-| 测试 | 404 tests / 0 failures / 0 errors / 10 skipped |
+| 测试 | 389 tests / 0 failures / 0 errors / 10 skipped |
 | 安全审计 | 相机和障碍物节点测试均检查不发布 `/cmd_vel` |
 
 ### 发现的问题
 
-1. 正式入口默认 Mock，不符合真实相机默认要求。
+1. 旧实现曾默认 Mock；Mock 和图片回放代码现已全部删除。
 2. MVS 失败时节点无限重连，启动命令不会返回失败。
 3. MVS 部分初始化失败后存在句柄释放风险。
 4. 驱动未明确限定单台 GigE 相机，不能静默选择任意设备。
@@ -42,7 +42,7 @@
 
 ### 仍未完成
 
-真实相机采集、`rqt_image_view` 实机画面、真实标定和相机断线恢复必须在 GigE 链路可用后验收。不得用 Mock 结果替代。
+真实相机采集、`rqt_image_view` 实机画面、真实标定和相机断线恢复必须在 GigE 链路可用后验收。当前代码不提供 Mock 或回放结果作为替代。
 
 ---
 

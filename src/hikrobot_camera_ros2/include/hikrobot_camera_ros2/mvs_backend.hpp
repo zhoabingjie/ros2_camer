@@ -2,10 +2,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // Hikrobot MVS GigE backend.
+// The production node has no synthetic image fallback.
 //
 // The vendor library is loaded with dlopen() so the package can still be built
-// and the mock backend can still run on a machine without the MVS SDK. All
-// symbols and structure layouts used by this backend are taken from the MVS
+// and report a missing SDK without a hard vendor-link dependency. All symbols
+// and structure layouts used by this backend are taken from the MVS
 // headers installed on the target system; no SDK API is guessed.
 
 #ifndef HIKROBOT_CAMERA_ROS2__MVS_BACKEND_HPP_

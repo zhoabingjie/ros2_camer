@@ -1,8 +1,4 @@
-"""Launch the Hikrobot camera driver.
-
-The formal default backend is the real MVS GigE camera. Mock frames are only
-used when `backend:=mock` is passed explicitly.
-"""
+"""Launch the single real Hikrobot MVS GigE camera driver."""
 
 import os
 
@@ -19,7 +15,6 @@ def generate_launch_description():
     )
 
     params_file = LaunchConfiguration("params_file")
-    backend = LaunchConfiguration("backend")
     frame_id = LaunchConfiguration("frame_id")
     calibration_file = LaunchConfiguration("calibration_file")
     require_camera = LaunchConfiguration("require_camera_at_startup")
@@ -38,11 +33,6 @@ def generate_launch_description():
                 description="YAML parameter file for camera_node",
             ),
             DeclareLaunchArgument(
-                "backend",
-                default_value="mvs",
-                description="'mvs' for the real Hikvision camera; 'mock' only for offline use",
-            ),
-            DeclareLaunchArgument(
                 "frame_id",
                 default_value="camera_optical_frame",
                 description="frame_id stamped on Image and CameraInfo",
@@ -55,7 +45,7 @@ def generate_launch_description():
             DeclareLaunchArgument(
                 "require_camera_at_startup",
                 default_value="true",
-                description="Fail the process when the selected backend cannot open",
+                description="Fail the process when the MVS camera cannot open",
             ),
             DeclareLaunchArgument(
                 "mvs_pixel_format",
@@ -75,7 +65,6 @@ def generate_launch_description():
                 parameters=[
                     params_file,
                     {
-                        "backend": backend,
                         "frame_id": frame_id,
                         "calibration_file": calibration_file,
                         "require_camera_at_startup": require_camera,

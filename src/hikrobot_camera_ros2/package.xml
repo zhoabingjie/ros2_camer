@@ -5,8 +5,8 @@
   <version>0.2.0</version>
   <description>
     Hikrobot (Hikvision Machine Vision) MV-CS050-10GM camera adapter for ROS 2 Jazzy.
-    Phase 1 deliverable: backend-neutral acquisition interface, mock backend,
-    honest uncalibrated CameraInfo, and stream diagnostics. C++17 / rclcpp.
+    Real MVS acquisition, honest uncalibrated CameraInfo, stream diagnostics,
+    and clean SDK lifecycle. C++17 / rclcpp.
   </description>
   <maintainer email="design3-team3@proton.me">team3</maintainer>
   <license>Apache-2.0</license>

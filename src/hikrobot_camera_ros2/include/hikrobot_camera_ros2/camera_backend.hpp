@@ -32,7 +32,7 @@ class CameraBackend
 public:
   virtual ~CameraBackend() = default;
 
-  /// @brief Registered name, e.g. "mock" or "mvs".
+  /// @brief Backend name, currently "mvs".
   virtual std::string name() const = 0;
 
   /// @brief True when the backend needs real hardware or a vendor SDK.

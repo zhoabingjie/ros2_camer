@@ -4,7 +4,6 @@
 #include "hikrobot_camera_ros2/camera_node.hpp"
 
 #include <algorithm>
-#include <cctype>
 #include <chrono>
 #include <cstdint>
 #include <exception>
@@ -12,8 +11,6 @@
 #include <string>
 #include <typeinfo>
 #include <utility>
-
-#include "hikrobot_camera_ros2/backend_registry.hpp"
 
 namespace hikrobot_camera_ros2
 {
@@ -32,13 +29,6 @@ rclcpp::QoS build_qos(const std::string & reliability, int depth)
   }
   qos.durability(rclcpp::DurabilityPolicy::Volatile);
   return qos;
-}
-
-/// Negative parameter means "disabled".
-std::optional<int64_t> optional_frame_count(int64_t value)
-{
-  if (value < 0) {return std::nullopt;}
-  return value;
 }
 
 std::string state_name(StreamState state)
@@ -87,31 +77,16 @@ CameraNode::CameraNode(const rclcpp::NodeOptions & options)
   load_calibration(config_.calibration_file);
 
   RCLCPP_INFO(
-    get_logger(), "camera_node starting: backend=%s frame_id=%s image=%s info=%s calibrated=%s",
-    config_.backend.c_str(), config_.frame_id.c_str(), config_.image_topic.c_str(),
+    get_logger(), "camera_node starting: backend=mvs frame_id=%s image=%s info=%s calibrated=%s",
+    config_.frame_id.c_str(), config_.image_topic.c_str(),
     config_.camera_info_topic.c_str(), calibration_.has_value() ? "true" : "false");
-
-  if (config_.backend == "mock") {
-    if (!config_.mock.image_path.empty()) {
-      RCLCPP_WARN(
-        get_logger(),
-        "backend 'mock' is REPLAYING the still image '%s'. This is NOT a real "
-        "camera capture and no live scene is observed.",
-        config_.mock.image_path.c_str());
-    } else {
-      RCLCPP_WARN(
-        get_logger(),
-        "backend 'mock' generates synthetic frames; this is NOT a real camera capture");
-    }
-  }
 
   if (config_.require_camera_at_startup) {
     auto backend = make_backend();
     if (!backend) {
       throw std::runtime_error(
-              "required camera backend '" + config_.backend +
-              "' could not be opened; refusing to start with no image source. "
-              "Use backend:=mock only for an explicit offline demo.");
+              "required MVS camera could not be opened; refusing to start with no image source. "
+              "Check camera power, cable, network interface and address.");
     }
     backend_ = std::move(backend);
   }
@@ -130,7 +105,6 @@ CameraNode::~CameraNode()
 
 void CameraNode::declare_parameters()
 {
-  declare_parameter<std::string>("backend", "mock");
   declare_parameter<std::string>("frame_id", "camera_optical_frame");
   declare_parameter<std::string>("image_topic", "/camera/image_raw");
   declare_parameter<std::string>("camera_info_topic", "/camera/camera_info");
@@ -143,16 +117,6 @@ void CameraNode::declare_parameters()
   declare_parameter<std::string>("qos_reliability", "best_effort");
   declare_parameter<int>("qos_depth", 5);
   declare_parameter<bool>("require_camera_at_startup", true);
-
-  declare_parameter<int>("mock_width", 640);
-  declare_parameter<int>("mock_height", 480);
-  declare_parameter<std::string>("mock_encoding", "mono8");
-  declare_parameter<double>("mock_fps", 10.0);
-  declare_parameter<std::string>("mock_pattern", "moving_bar");
-  declare_parameter<int>("mock_fail_after_frames", -1);
-  declare_parameter<double>("mock_fail_duration_s", 0.0);
-  declare_parameter<int>("mock_raise_after_frames", -1);
-  declare_parameter<std::string>("mock_image_path", "");
 
   declare_parameter<std::vector<std::string>>("sdk_lib_candidates", std::vector<std::string>{""});
 
@@ -168,10 +132,6 @@ void CameraNode::declare_parameters()
 CameraNode::Config CameraNode::read_config()
 {
   Config config;
-  config.backend = get_parameter("backend").as_string();
-  std::transform(
-    config.backend.begin(), config.backend.end(), config.backend.begin(),
-    [](unsigned char c) {return static_cast<char>(std::tolower(c));});
   config.frame_id = get_parameter("frame_id").as_string();
   config.image_topic = get_parameter("image_topic").as_string();
   config.camera_info_topic = get_parameter("camera_info_topic").as_string();
@@ -184,18 +144,6 @@ CameraNode::Config CameraNode::read_config()
   config.qos_reliability = get_parameter("qos_reliability").as_string();
   config.qos_depth = static_cast<int>(get_parameter("qos_depth").as_int());
   config.require_camera_at_startup = get_parameter("require_camera_at_startup").as_bool();
-
-  config.mock.width = static_cast<int>(get_parameter("mock_width").as_int());
-  config.mock.height = static_cast<int>(get_parameter("mock_height").as_int());
-  config.mock.encoding = get_parameter("mock_encoding").as_string();
-  config.mock.fps = get_parameter("mock_fps").as_double();
-  config.mock.pattern = get_parameter("mock_pattern").as_string();
-  config.mock.fail_after_frames =
-    optional_frame_count(get_parameter("mock_fail_after_frames").as_int());
-  config.mock.fail_duration_s = get_parameter("mock_fail_duration_s").as_double();
-  config.mock.raise_after_frames =
-    optional_frame_count(get_parameter("mock_raise_after_frames").as_int());
-  config.mock.image_path = get_parameter("mock_image_path").as_string();
 
   const auto candidates = get_parameter("sdk_lib_candidates").as_string_array();
   for (const auto & candidate : candidates) {
@@ -233,21 +181,14 @@ void CameraNode::load_calibration(const std::string & path)
 
 std::unique_ptr<CameraBackend> CameraNode::make_backend()
 {
-  BackendRequest request;
-  request.name = config_.backend;
-  request.mock = config_.mock;
-  request.mvs = config_.mvs;
   try {
-    auto backend = create_backend(request);
+    auto backend = std::make_unique<MvsBackend>(config_.mvs);
     backend->open();
-    RCLCPP_INFO(
-      get_logger(), "backend '%s' opened: %s", config_.backend.c_str(),
-      backend->describe().c_str());
+    RCLCPP_INFO(get_logger(), "MVS backend opened: %s", backend->describe().c_str());
     return backend;
   } catch (const std::exception & exc) {
     health_->on_error(exc.what());
-    RCLCPP_ERROR(
-      get_logger(), "backend '%s' unavailable: %s", config_.backend.c_str(), exc.what());
+    RCLCPP_ERROR(get_logger(), "MVS backend unavailable: %s", exc.what());
     return nullptr;
   }
 }
@@ -353,7 +294,7 @@ void CameraNode::publish_status()
     backend = backend_.get();
   }
   const std::string description =
-    backend != nullptr ? backend->describe() : ("backend=" + config_.backend + " (not open)");
+    backend != nullptr ? backend->describe() : "backend=mvs (not open)";
 
   uint8_t level = diagnostic_msgs::msg::DiagnosticStatus::OK;
   if (snapshot.state == StreamState::kBackendError) {
@@ -376,20 +317,18 @@ void CameraNode::publish_status()
 
   diagnostic_msgs::msg::DiagnosticStatus status;
   status.name = get_name() + std::string(": stream");
-  status.hardware_id = config_.backend;
+  status.hardware_id = "mvs";
   status.level = level;
   status.message = snapshot.last_error.has_value() ?
     (state_name(snapshot.state) + ": " + *snapshot.last_error) : state_name(snapshot.state);
 
-  const bool is_mock = config_.backend == "mock";
   auto add = [&status](const std::string & key, const std::string & value) {
       diagnostic_msgs::msg::KeyValue kv;
       kv.key = key;
       kv.value = value;
       status.values.push_back(kv);
     };
-  add("backend", config_.backend);
-  add("mock_source", is_mock ? "True" : "False");
+  add("backend", "mvs");
   add("frame_id", config_.frame_id);
   add("frames_total", std::to_string(snapshot.frames_total));
   add(

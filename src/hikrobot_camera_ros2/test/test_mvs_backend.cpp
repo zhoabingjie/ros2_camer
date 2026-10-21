@@ -13,13 +13,10 @@
 #include <stdexcept>
 #include <string>
 
-#include "hikrobot_camera_ros2/backend_registry.hpp"
 #include "hikrobot_camera_ros2/mvs_backend.hpp"
 
-using hikrobot_camera_ros2::BackendRequest;
 using hikrobot_camera_ros2::BackendUnavailableError;
 using hikrobot_camera_ros2::MvsBackend;
-using hikrobot_camera_ros2::create_backend;
 using hikrobot_camera_ros2::probe_sdk;
 
 TEST(MvsBackend, ExtraCandidateThatDoesNotExistIsNotReportedAsFound)
@@ -52,9 +49,6 @@ TEST(MvsBackend, OpenNeverSucceedsWithoutAWorkingCameraAndNeverInventsAFrame)
   std::string message;
   try {
     backend.open();
-    // With a camera attached and the SDK present this could legitimately succeed.
-    // In that case the contract to check is that grab() returns real data or
-    // throws -- never a placeholder.
     backend.close();
     GTEST_SKIP() << "a camera is attached and the SDK works; capture path not exercised here";
   } catch (const std::exception & exc) {
@@ -66,7 +60,6 @@ TEST(MvsBackend, OpenNeverSucceedsWithoutAWorkingCameraAndNeverInventsAFrame)
     EXPECT_NE(message.find("MVS SDK not found"), std::string::npos) << message;
     EXPECT_NE(message.find("ACTION"), std::string::npos) << message;
   } else {
-    // SDK present: the failure must name the actual blocker.
     EXPECT_NE(message.find("MVS"), std::string::npos) << message;
   }
   EXPECT_THROW(backend.grab(0.0), std::exception);
@@ -80,7 +73,6 @@ TEST(MvsBackend, DescribeReportsSdkAndImplementationState)
 
   EXPECT_NE(description.find("requires_hardware=true"), std::string::npos) << description;
   EXPECT_NE(description.find("implemented="), std::string::npos) << description;
-  // The reported SDK state must match what the probe actually found.
   EXPECT_EQ(
     description.find("sdk_library_found=true") != std::string::npos,
     probe.library_found()) << description;
@@ -89,13 +81,10 @@ TEST(MvsBackend, DescribeReportsSdkAndImplementationState)
     probe.headers_found()) << description;
 }
 
-TEST(MvsBackend, IsSelectableThroughTheRegistryAndNeedsHardware)
+TEST(MvsBackend, DeclaresMvsNameAndHardwareRequirement)
 {
-  BackendRequest request;
-  request.name = "mvs";
-  auto backend = create_backend(request);
-  ASSERT_NE(backend, nullptr);
-  EXPECT_EQ(backend->name(), "mvs");
-  EXPECT_TRUE(backend->requires_hardware())
-    << "a real camera backend must declare that it needs hardware";
+  MvsBackend backend;
+  EXPECT_EQ(backend.name(), "mvs");
+  EXPECT_TRUE(backend.requires_hardware())
+    << "the real camera backend must declare that it needs hardware";
 }

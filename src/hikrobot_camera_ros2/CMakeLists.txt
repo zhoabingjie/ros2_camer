@@ -20,9 +20,8 @@ find_package(yaml-cpp REQUIRED)
 find_package(OpenCV REQUIRED COMPONENTS core imgcodecs imgproc)
 find_package(Threads REQUIRED)
 
-# The Hikrobot MVS SDK is optional: without it the package still builds and the
-# mock backend works. Detection is done at configure time so a machine without
-# the SDK never needs the vendor headers.
+# The Hikrobot MVS SDK is optional for package builds. The real camera backend
+# remains available when the SDK headers are installed.
 set(HIKROBOT_MVS_INCLUDE_DIR "" CACHE PATH "Hikrobot MVS SDK include dir")
 if(NOT HIKROBOT_MVS_INCLUDE_DIR)
   find_path(HIKROBOT_MVS_INCLUDE_DIR_FOUND
@@ -52,8 +51,6 @@ add_library(hikrobot_camera_ros2_core
   src/frame.cpp
   src/camera_backend.cpp
   src/stream_health.cpp
-  src/backend_registry.cpp
-  src/mock_backend.cpp
   src/mvs_backend.cpp
   src/camera_info_factory.cpp
   src/camera_node.cpp
@@ -97,8 +94,6 @@ if(BUILD_TESTING)
   ament_add_gtest(test_stream_health test/test_stream_health.cpp)
   target_link_libraries(test_stream_health hikrobot_camera_ros2_core)
 
-  ament_add_gtest(test_mock_backend test/test_mock_backend.cpp)
-  target_link_libraries(test_mock_backend hikrobot_camera_ros2_core)
 
   ament_add_gtest(test_camera_info_factory test/test_camera_info_factory.cpp)
   target_link_libraries(test_camera_info_factory hikrobot_camera_ros2_core)

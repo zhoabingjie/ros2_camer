@@ -106,10 +106,3 @@ CameraInfo 的 `K` 全零（本项目的"未标定"诚实标记）时，`image_p
 - `/camera/image_rect` 只有在提供有效标定文件后才有数据。
 
 不要为了让 `/camera/image_rect` "有输出" 而随手造一份标定文件——那正是项目规则禁止的。
-
-## 6. 为什么仓库里有一份 `config/mock/test_calibration.yaml`
-
-它**不是**相机标定，文件头已明确标注。它的唯一用途是：在没有硬件的机器上验证
-"camera_node → image_proc → /camera/image_rect" 这条链路真的会执行几何变换
-（其中的非零畸变系数会让校正图与原始图产生可测量的差异）。
-**绝不能把它用于任何真实相机。**

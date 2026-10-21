@@ -26,7 +26,6 @@ def generate_launch_description():
     )
 
     camera_params_file = LaunchConfiguration("camera_params_file")
-    backend = LaunchConfiguration("backend")
     frame_id = LaunchConfiguration("frame_id")
     pattern = LaunchConfiguration("pattern")
     size = LaunchConfiguration("size")
@@ -41,7 +40,6 @@ def generate_launch_description():
         parameters=[
             camera_params_file,
             {
-                "backend": backend,
                 "frame_id": frame_id,
                 "require_camera_at_startup": True,
             },
@@ -63,10 +61,6 @@ def generate_launch_description():
     return LaunchDescription(
         [
             DeclareLaunchArgument("camera_params_file", default_value=camera_params),
-            DeclareLaunchArgument(
-                "backend", default_value="mvs",
-                description="'mvs' for real calibration; 'mock' only proves wiring",
-            ),
             DeclareLaunchArgument("frame_id", default_value="camera_optical_frame"),
             DeclareLaunchArgument(
                 "pattern", default_value="chessboard",

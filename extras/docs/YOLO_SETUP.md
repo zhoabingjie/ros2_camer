@@ -123,30 +123,27 @@ curl -L -o yolo26n.onnx https://hf-mirror.com/unileon-robotics/YOLO26-ONNX/resol
 
 ## 4. 启动与验证
 
+真实相机、YOLO 和调试图统一启动：
+
 ```bash
-# 终端 1：图像源（无相机时用 mock；有标定才能用 image_rect）
-ros2 launch dmu_vision_bringup preview.launch.py backend:=mock \
-    calibration_file:=$HOME/vision_ws/install/dmu_vision_bringup/share/dmu_vision_bringup/config/mock/test_calibration.yaml
+cd ~/vision_ws
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
 
-# 终端 2：检测
-ros2 launch dmu_vision_bringup detection.launch.py
-
-# 验证
-ros2 topic list | grep yolo
-ros2 topic hz /yolo/cam0/detections
-ros2 topic echo --once /yolo/cam0/detections
-ros2 run rqt_image_view rqt_image_view     # 选 /yolo/cam0/debug_image
+ros2 launch dmu_vision_bringup vision.launch.py start_obstacle:=false
 ```
 
-**真实话题名（从源码提取，非猜测）**：
+验证稳定接口：
 
-| 话题 | 类型 | 来源 |
-| --- | --- | --- |
-| `/yolo/cam0/detections` | `yolo_msgs/msg/DetectionArray` | `detection_plugin.hpp:53` |
-| `/yolo/cam0/tracking` | `yolo_msgs/msg/DetectionArray` | `tracking_plugin.hpp:45` |
-| `/yolo/cam0/debug_image` | `sensor_msgs/msg/Image` | `debug_plugin.hpp:58` |
-| `/yolo/cam0/debug_bb_markers` | `visualization_msgs/msg/MarkerArray` | `debug_plugin.cpp:101` |
-| `/yolo/cam0/debug_kp_markers` | `visualization_msgs/msg/MarkerArray` | `debug_plugin.cpp:102` |
+```bash
+ros2 topic list | grep -E '^/vision/'
+ros2 topic hz /vision/detections
+ros2 topic echo --once /vision/detections
+ros2 launch dmu_vision_bringup image_viewer.launch.py \
+  image_topic:=/vision/debug_image
+```
+
+上游 `detection.launch.py` 仍可单独使用，并保留 `/yolo/cam0/*` 旧话题名。
 
 ## 5. 单元测试的已知限制
 
