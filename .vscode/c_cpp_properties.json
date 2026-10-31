@@ -1,0 +1,23 @@
+{
+  "configurations": [
+    {
+      "name": "ROS 2 Jazzy - Linux",
+      "compileCommands": "${workspaceFolder}/build/compile_commands.json",
+      "includePath": [
+        "${workspaceFolder}/src/**",
+        "/opt/ros/jazzy/include/**",
+        "/opt/MVS/include/**",
+        "/usr/include/**",
+        "/usr/include/opencv4/**"
+      ],
+      "defines": [
+        "HIKROBOT_MVS_AVAILABLE"
+      ],
+      "compilerPath": "/usr/bin/g++",
+      "cStandard": "c17",
+      "cppStandard": "c++17",
+      "intelliSenseMode": "linux-gcc-x64"
+    }
+  ],
+  "version": 4
+}

@@ -18,6 +18,8 @@ def generate_launch_description():
     frame_id = LaunchConfiguration("frame_id")
     calibration_file = LaunchConfiguration("calibration_file")
     require_camera = LaunchConfiguration("require_camera_at_startup")
+    transport = LaunchConfiguration("mvs_transport")
+    serial_number = LaunchConfiguration("mvs_serial_number")
     pixel_format = LaunchConfiguration("mvs_pixel_format")
     width = LaunchConfiguration("mvs_width")
     height = LaunchConfiguration("mvs_height")
@@ -48,6 +50,16 @@ def generate_launch_description():
                 description="Fail the process when the MVS camera cannot open",
             ),
             DeclareLaunchArgument(
+                "mvs_transport",
+                default_value="auto",
+                description="auto, gige, or usb",
+            ),
+            DeclareLaunchArgument(
+                "mvs_serial_number",
+                default_value="",
+                description="Required when several matching cameras are visible",
+            ),
+            DeclareLaunchArgument(
                 "mvs_pixel_format",
                 default_value="",
                 description="Mono8, BGR8, RGB8, or empty to keep the camera setting",
@@ -68,6 +80,8 @@ def generate_launch_description():
                         "frame_id": frame_id,
                         "calibration_file": calibration_file,
                         "require_camera_at_startup": require_camera,
+                        "mvs_transport": transport,
+                        "mvs_serial_number": serial_number,
                         "mvs_pixel_format": pixel_format,
                         "mvs_width": width,
                         "mvs_height": height,

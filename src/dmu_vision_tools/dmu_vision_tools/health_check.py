@@ -17,10 +17,10 @@ from __future__ import annotations
 import argparse
 import sys
 import time
-from typing import List, Optional
+from typing import Dict, List, Optional, Tuple
 
 import rclpy
-from diagnostic_msgs.msg import DiagnosticArray
+from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import CameraInfo, Image
@@ -51,6 +51,25 @@ def _reliability_of(value) -> Reliability:
     if "reliable" in name:
         return Reliability.RELIABLE
     return Reliability.SYSTEM_DEFAULT
+
+
+def normalize_diagnostic_level(value) -> int:
+    """Normalize rclpy uint8 values, which may be int or a one-byte bytes object."""
+    if isinstance(value, (bytes, bytearray)):
+        return int(value[0]) if value else -1
+    return int(value)
+
+
+def summarize_diagnostics(message) -> Dict[str, Tuple[int, str]]:
+    """Keep each node diagnostic separate instead of mixing camera and obstacle state."""
+    summary: Dict[str, Tuple[int, str]] = {}
+    for status in message.status:
+        state = status.message.split(":", 1)[0].strip()
+        for kv in status.values:
+            if kv.key == "state":
+                state = kv.value
+        summary[status.name] = (normalize_diagnostic_level(status.level), state)
+    return summary
 
 
 def _durability_of(value) -> Durability:
@@ -86,7 +105,7 @@ class HealthCheck(Node):
         self._image_frame_ids: List[str] = []
         self._info_frame_ids: List[str] = []
         self._calibrated: Optional[bool] = None
-        self._stream_state: Optional[str] = None
+        self._diagnostics: Dict[str, Tuple[int, str]] = {}
 
         self.create_subscription(Image, args.image, self._on_image, PROBE_QOS)
         self.create_subscription(CameraInfo, args.camera_info, self._on_info, PROBE_QOS)
@@ -108,12 +127,7 @@ class HealthCheck(Node):
         self._calibrated = any(abs(v) > 1e-9 for v in msg.k)
 
     def _on_status(self, msg: DiagnosticArray) -> None:
-        for status in msg.status:
-            for kv in status.values:
-                if kv.key == "state":
-                    self._stream_state = kv.value
-            if self._stream_state is None:
-                self._stream_state = status.message.split(":")[0].strip()
+        self._diagnostics.update(summarize_diagnostics(msg))
 
     # -- checks ------------------------------------------------------------
     def _check_topic(self, report: Report, label: str, topic: str, expected_type: str) -> None:
@@ -194,6 +208,28 @@ class HealthCheck(Node):
             return
         report.add("frame_id consistency", Status.OK, f"both use '{next(iter(image_ids))}'")
 
+    def _check_diagnostics(self, report: Report) -> None:
+        if not self._diagnostics:
+            report.add("diagnostics", Status.WARN, f"no diagnostics received on {self._args.status}")
+            return
+
+        detail = "; ".join(
+            f"{name}: {state}" for name, (_, state) in sorted(self._diagnostics.items()))
+        error_levels = {
+            DiagnosticStatus.ERROR,
+            DiagnosticStatus.STALE,
+        }
+        errors = [name for name, (level, _) in self._diagnostics.items() if level in error_levels]
+        warnings = [
+            name for name, (level, _) in self._diagnostics.items()
+            if level == DiagnosticStatus.WARN]
+        if errors:
+            report.add("diagnostics", Status.FAIL, f"error from {sorted(errors)}: {detail}")
+        elif warnings:
+            report.add("diagnostics", Status.WARN, f"warning from {sorted(warnings)}: {detail}")
+        else:
+            report.add("diagnostics", Status.OK, detail)
+
     def _check_calibration(self, report: Report) -> None:
         if self._calibrated is None:
             report.add("calibration", Status.FAIL, "no CameraInfo received")
@@ -220,10 +256,7 @@ class HealthCheck(Node):
         self._check_frame_id_consistency(report)
         self._check_calibration(report)
         if args.status:
-            if self._stream_state is None:
-                report.add("stream status", Status.WARN, f"no diagnostics received on {args.status}")
-            else:
-                report.add("stream status", Status.OK, f"reported state '{self._stream_state}'")
+            self._check_diagnostics(report)
         return report
 
 

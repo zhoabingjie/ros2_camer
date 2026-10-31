@@ -1,19 +1,21 @@
 # ros2_camer — ROS 2 Jazzy 单目视觉子系统
 
-适用环境：Ubuntu 24.04 + ROS 2 Jazzy + C++17。当前相机：海康 `MV-CS050-10GM`（GigE）。
+适用环境：Ubuntu 24.04 + ROS 2 Jazzy + C++17。当前相机：单台海康 GigE 或 USB3 Vision 相机。
 
-## 当前状态（2026-10-21）
+## 当前状态（2026-10-31）
 
 - Linux MVS x86_64 SDK 已安装并可加载。
-- 相机驱动支持真实 MVS 后端和设备枚举，可打印型号、序列号、IP。
+- 相机驱动支持真实 MVS 后端、GigE / USB3 Vision 设备枚举，可打印型号、序列号、传输类型和 IP。
 - 正式入口默认使用真实 MVS；相机缺失时明确报错并以非零状态退出。
 - 生产代码只支持真实 MVS 相机，不包含 Mock 或图片回放后端。
 - 图像预览与相机驱动解耦。
 - YOLO 2D 检测、跟踪和 debug image 已接入。
+- 曝光和增益使用 MVS 浮点接口设置。
+- `mvs_transport` 可选择 `auto`、`gige` 或 `usb`；多设备时可用 `mvs_serial_number` 选择。
 - 新增二维视觉障碍物接口和节点，不输出伪造距离，不控制 `/cmd_vel`。
 - 完整构建：10 个包通过。
-- 完整测试：`389 tests / 0 failures / 0 errors / 10 skipped`。
-- **真实相机取流尚未验收**：当前 VMware 没有相机用桥接网卡，MVS 实测 `devices=0`。
+- 完整测试：`391 tests / 0 failures / 0 errors / 10 skipped`。
+- **真实相机取流尚未验收**：当前 VMware 未检测到海康 USB 设备，实体以太网也未连接，MVS 实测 `devices=0`。
 
 ## 正式启动
 
@@ -40,7 +42,20 @@ source install/setup.bash
 ros2 launch hikrobot_camera_ros2 camera.launch.py
 ```
 
-当前驱动只支持一台 GigE 相机；枚举到 0 台会报错，枚举到多台也会拒绝启动。
+USB 相机：
+
+```bash
+ros2 launch hikrobot_camera_ros2 camera.launch.py mvs_transport:=usb
+```
+
+设置曝光（单位：微秒）：
+
+```bash
+ros2 launch hikrobot_camera_ros2 camera.launch.py \
+  mvs_transport:=usb mvs_exposure_us:=5000.0
+```
+
+当前驱动只支持一台海康相机（GigE 或 USB3 Vision）；枚举到 0 台会报错，多台匹配设备时必须设置 `mvs_serial_number`。
 
 ## 查看图像和检测结果
 
@@ -100,7 +115,7 @@ ros2 run dmu_vision_tools vision_health_check --measure 5
 
 | 包 | 作用 |
 |---|---|
-| `hikrobot_camera_ros2` | 海康 GigE 真实相机驱动、Image/CameraInfo/诊断发布 |
+| `hikrobot_camera_ros2` | 海康 GigE / USB3 Vision 真实相机驱动、Image/CameraInfo/诊断发布 |
 | `dmu_vision_bringup` | 正式统一启动、预览、标定和参数编排 |
 | `dmu_vision_interfaces` | 团队稳定消息接口 |
 | `visual_obstacle_avoidance` | 单目二维障碍物筛选和状态输出 |

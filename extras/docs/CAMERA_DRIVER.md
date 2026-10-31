@@ -1,6 +1,6 @@
-# 海康 MV-CS050-10GM 相机接入
+# 海康 GigE / USB3 Vision 相机接入
 
-## 2026-10-21 驱动加固
+## 2026-10-31 驱动加固
 
 - 已根据当前 MVS 头文件加入 `MV_CC_Initialize`。
 - `MV_CC_Finalize` 在所有相机句柄释放后，由 `camera_main` 受控调用。
@@ -8,6 +8,8 @@
 - CMake 优先搜索环境变量和实际安装路径，`/opt/MVS` 仅作为回退。
 - 采集转换严格使用实际帧宽高和 `nFrameLen`，不复制参考项目的固定 `1280x1024`。
 - 运行时 SDK 版本实测为 `4.8.1.2`，与当前 `libMvCameraControl.so.4.8.1.2` 一致。
+- 设备枚举同时覆盖 `MV_GIGE_DEVICE | MV_USB_DEVICE`，并新增 `mvs_transport=auto|gige|usb`。
+- 曝光和增益通过 `MV_CC_SetFloatValue` 设置，避免整数截断。
 
 详细对比见 `extras/docs/MVS_REFERENCE_COMPARISON.md`。
 
@@ -18,7 +20,7 @@
 | 语言 | C++17 / rclcpp |
 | Linux MVS SDK | 已安装到 `/opt/MVS` |
 | 真实 MVS API | 已按 SDK 头文件实现 |
-| 相机枚举 | 已实现，失败时输出检查清单 |
+| 相机枚举 | GigE / USB3 Vision 已实现，失败时输出检查清单 |
 | 真实取流 | **未完成硬件验收** |
 
 当前 MVS 实测：
@@ -34,20 +36,16 @@ Status: Disconnected
 LinkSpeed: 0 bps
 ```
 
-因此问题在物理链路或虚拟机桥接，不在 ROS 代码。
+因此当前问题在设备连接、USB 透传或物理链路，不在 ROS 代码。
 
 ## 2. 驱动链路
 
 ```text
-MV-CS050-10GM
+Hikrobot GigE 或 USB3 Vision 相机
     |
-    | GigE
+    | GigE 网线 / USB3 透传
     v
-Windows 实体网卡
-    |
-    | VMware Bridged 第二网卡
-    v
-Ubuntu ens37/ens38
+Windows 主机 + VMware 设备/桥接
     |
     | MVS SDK
     v
@@ -62,9 +60,10 @@ NAT 网卡 `VMnet8` 必须保留，不能改成桥接，否则 SSH 和 VS Code �
 
 ## 3. 硬件和网络检查
 
-1. 确认相机铭牌要求的供电方式。普通网线不保证供电。
-2. 相机网口直接接电脑实体网口，确认两端网口灯亮。
-3. Windows 检查：
+1. 先确认相机铭牌型号和供电方式。
+2. GigE：相机网口接电脑实体网口，确认两端网口灯亮。
+3. USB3 Vision：在 VMware 中把相机 USB 设备连接到虚拟机，并用 `lsusb` 确认。
+4. GigE 模式下在 Windows 检查：
 
 ```powershell
 Get-NetAdapter -Name "以太网" |
@@ -73,16 +72,16 @@ Get-NetAdapter -Name "以太网" |
 
 必须看到 `Status: Up` 和非零 `LinkSpeed`。
 
-4. 给虚拟机增加第二块 Bridged 网卡，绑定实体以太网适配器。
-5. 不要修改原 NAT 网卡。
-6. 在 Ubuntu 查看新接口：
+5. GigE 模式下给虚拟机增加第二块 Bridged 网卡，绑定实体以太网适配器。
+6. 不要修改原 NAT 网卡。
+7. 在 Ubuntu 查看新接口：
 
 ```bash
 ip -brief address
 ip route
 ```
 
-7. 根据相机 IP 配置同网段地址。例如仅当相机确认是 `192.168.1.x/24` 时：
+8. GigE 模式下根据相机 IP 配置同网段地址。例如仅当相机确认是 `192.168.1.x/24` 时：
 
 ```bash
 sudo ip addr add 192.168.1.100/24 dev ens37
@@ -98,26 +97,29 @@ cd ~/vision_ws
 source /opt/ros/jazzy/setup.bash
 source install/setup.bash
 
-ros2 run hikrobot_camera_ros2 camera_node \
-  --ros-args -p backend:=mvs
+ros2 launch hikrobot_camera_ros2 camera.launch.py mvs_transport:=auto
 ```
 
 正常枚举会打印类似：
 
 ```text
-devices=1 [GigE model='MV-CS050-10GM' serial='...' ip=... mask=...]
+devices=1 [GigE model='...' serial='...' ip=... mask=...]
+# 或
+devices=1 [USB3 model='...' serial='...' vid=0x... pid=0x...]
 ```
 
-当前驱动只支持一台 GigE 相机；检测到 0 台或多台都会拒绝启动。
+当前驱动只支持一台相机；检测到 0 台会失败，多台匹配设备时必须设置 `mvs_serial_number`。
 
 ## 5. 参数
 
 | 参数 | 含义 |
 |---|---|
 | `require_camera_at_startup` | 启动失败是否返回非零 |
+| `mvs_transport` | `auto`、`gige` 或 `usb` |
+| `mvs_serial_number` | 多台匹配设备时的唯一序列号 |
 | `mvs_pixel_format` | `Mono8`、`BGR8`、`RGB8` |
 | `mvs_width` / `mvs_height` | 0 表示保持相机当前值 |
-| `mvs_exposure_us` | 0 表示保持当前值 |
+| `mvs_exposure_us` | 微秒；0 表示保持当前值 |
 | `mvs_gain` | 0 表示保持当前值 |
 | `mvs_packet_size` | 0 表示使用 SDK 推荐值 |
 | `calibration_file` | 标定 YAML；空表示未标定 |
@@ -125,8 +127,8 @@ devices=1 [GigE model='MV-CS050-10GM' serial='...' ip=... mask=...]
 ## 6. 错误处理
 
 - SDK 未找到：列出搜索路径。
-- 相机数为 0：输出电源、网线、L2 网段和 `rp_filter` 检查清单。
-- 枚举到的 GigE 相机数量不是 1：拒绝启动并列出设备。
+- 相机数为 0：输出电源、GigE 网线/L2 网段、USB 透传和 `rp_filter` 检查清单。
+- 没有匹配 `mvs_transport` / `mvs_serial_number` 的设备：拒绝启动并列出设备。
 - 打开设备失败：提示可能被 MVS 客户端或其他程序占用。
 - 取流异常：关闭并重新打开后端。
 - 退出：停止采集、关闭设备、销毁句柄。

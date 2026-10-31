@@ -1,10 +1,11 @@
 # hikrobot_camera_ros2
 
-海康 GigE 工业相机 ROS 2 Jazzy 驱动适配包，C++17。当前只支持一台 `MV-CS050-10GM`。
+海康 GigE / USB3 Vision 工业相机 ROS 2 Jazzy 驱动适配包，C++17。当前支持一台匹配相机。
 
 ## 功能
 
-- 通过 Linux MVS SDK 枚举、打开和采集一台海康 GigE 相机。
+- 通过 Linux MVS SDK 枚举、打开和采集一台海康 GigE 或 USB3 Vision 相机。
+- 支持 `mvs_transport=auto|gige|usb` 和 `mvs_serial_number` 选择。
 - 将真实采集帧复制为 `sensor_msgs/msg/Image`。
 - 同步发布 `sensor_msgs/msg/CameraInfo`。
 - 未标定时发布 K/P 全零的 CameraInfo，不伪造内参。
@@ -27,16 +28,20 @@ cd ~/vision_ws
 source /opt/ros/jazzy/setup.bash
 source install/setup.bash
 
-ros2 launch hikrobot_camera_ros2 camera.launch.py
+ros2 launch hikrobot_camera_ros2 camera.launch.py mvs_transport:=auto
 ```
 
-当前驱动只支持一台 GigE 相机；枚举到 0 台或多台都会拒绝启动。启动日志会列出型号、序列号、IP 和掩码。
+USB 相机可显式使用 `mvs_transport:=usb`。
+
+当前驱动只支持一台相机；枚举到 0 台会失败，多台匹配设备时必须设置 `mvs_serial_number`。启动日志会列出型号、序列号、传输类型和 IP。
 
 ## 主要参数
 
 | 参数 | 默认值 |
 |---|---|
 | `require_camera_at_startup` | `true` |
+| `mvs_transport` | `auto` |
+| `mvs_serial_number` | 空 |
 | `mvs_pixel_format` | 空 |
 | `mvs_exposure_us` | 0 |
 | `mvs_gain` | 0 |

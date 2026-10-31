@@ -4,7 +4,7 @@
 
 对比日期：2026-10-21。
 
-参考项目的 ROS 2 环境标注为 Ubuntu 22.04 / Humble，相机型号为 `MV-CU013-A0UC`。本项目为 Ubuntu 24.04 / ROS 2 Jazzy / `MV-CS050-10GM`，因此参考项目只用于核对 MVS API 使用方式，不作为直接移植来源。
+参考项目的 ROS 2 环境标注为 Ubuntu 22.04 / Humble，相机型号为 `MV-CU013-A0UC`。本项目为 Ubuntu 24.04 / ROS 2 Jazzy，单相机支持 GigE 或 USB3 Vision，因此参考项目只用于核对 MVS API 使用方式，不作为直接移植来源。
 
 ## 1. 文件对照
 
@@ -25,7 +25,7 @@
 | SDK 反初始化 | 相机进程 `main` 受控调用 `MV_CC_Finalize` | 未调用 | 已补齐并避开静态析构崩溃 |
 | SDK 版本 | 读取 `MV_CC_GetSDKVersion` | 无 | 已补齐 |
 | 设备枚举 | 型号、序列号、IP、掩码 | IP 或用户名 | 当前更完整 |
-| 设备选择 | 只支持一台 GigE；0 台或多台都拒绝 | 固定第一台 | 当前更明确 |
+| 设备选择 | 支持一台 GigE 或 USB3 Vision；可按序列号选择 | 固定第一台 | 当前更明确 |
 | 打开设备 | 错误抛出并进入状态诊断 | 错误直接 `exit(-1)` | 当前更适合 ROS 节点 |
 | 采集参数 | 宽高、曝光、增益、像素格式、GigE 包大小 | 参数更多，但大量固定值 | 当前保留最小可控参数 |
 | 取流 | `MV_CC_GetOneFrameTimeout`、超时重试 | 同一 API，失败累计后 `exit(-1)` | 当前保留 |
@@ -99,7 +99,7 @@
 | 构建 | 通过 |
 | 相机包测试 | 通过 |
 | Mock/图片回放代码 | 已删除 |
-| 全工作区测试 | 389 tests / 0 failures / 0 errors |
+| 全工作区测试 | 391 tests / 0 failures / 0 errors / 10 skipped |
 | 无相机启动 | 返回码 1，明确报错，Finalize 后无崩溃 |
 | 真实相机枚举 | `devices=0`，当前未连接相机 |
 | 真实图像发布与取流 | **未验证** |
@@ -107,7 +107,7 @@
 真实相机连接后必须重新执行：
 
 ```bash
-ros2 run hikrobot_camera_ros2 camera_node --ros-args -p backend:=mvs
+ros2 launch hikrobot_camera_ros2 camera.launch.py mvs_transport:=auto
 ros2 topic hz /camera/image_raw
 ros2 topic echo --once /camera/camera_info
 ```

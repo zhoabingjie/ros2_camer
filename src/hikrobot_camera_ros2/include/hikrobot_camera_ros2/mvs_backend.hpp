@@ -1,7 +1,7 @@
 // Copyright 2026 team3
 // SPDX-License-Identifier: Apache-2.0
 //
-// Hikrobot MVS GigE backend.
+// Hikrobot MVS GigE / USB3 Vision backend.
 // The production node has no synthetic image fallback.
 //
 // The vendor library is loaded with dlopen() so the package can still be built
@@ -52,6 +52,10 @@ struct MvsBackendOptions
 {
   std::vector<std::string> sdk_lib_candidates;
 
+  /// auto: accept GigE or USB3 Vision; gige/usb: restrict the transport.
+  std::string transport{"auto"};
+  /// Empty = accept the only matching device. Required when several match.
+  std::string serial_number;
 
   /// Empty = leave the device's current pixel format (we convert to mono8/bgr8).
   /// Any other value is written to the "PixelFormat" node by name, e.g. "Mono8".

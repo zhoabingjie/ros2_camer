@@ -120,7 +120,9 @@ void CameraNode::declare_parameters()
 
   declare_parameter<std::vector<std::string>>("sdk_lib_candidates", std::vector<std::string>{""});
 
-  // --- real camera (mvs backend) ---
+  // --- real camera (MVS GigE or USB3 Vision) ---
+  declare_parameter<std::string>("mvs_transport", "auto");
+  declare_parameter<std::string>("mvs_serial_number", "");
   declare_parameter<std::string>("mvs_pixel_format", "");
   declare_parameter<int>("mvs_width", 0);
   declare_parameter<int>("mvs_height", 0);
@@ -149,6 +151,8 @@ CameraNode::Config CameraNode::read_config()
   for (const auto & candidate : candidates) {
     if (!candidate.empty()) {config.mvs.sdk_lib_candidates.push_back(candidate);}
   }
+  config.mvs.transport = get_parameter("mvs_transport").as_string();
+  config.mvs.serial_number = get_parameter("mvs_serial_number").as_string();
   config.mvs.pixel_format = get_parameter("mvs_pixel_format").as_string();
   config.mvs.width = static_cast<int>(get_parameter("mvs_width").as_int());
   config.mvs.height = static_cast<int>(get_parameter("mvs_height").as_int());
@@ -168,21 +172,29 @@ void CameraNode::load_calibration(const std::string & path)
     return;
   }
   try {
-    calibration_ = ::hikrobot_camera_ros2::load_calibration(path);
+    const auto loaded = ::hikrobot_camera_ros2::load_calibration(path);
+    {
+      std::lock_guard<std::mutex> lock(calibration_mutex_);
+      calibration_ = loaded;
+      calibration_problem_.reset();
+    }
     RCLCPP_INFO(
-      get_logger(), "calibration loaded: %dx%d from %s", calibration_->image_width,
-      calibration_->image_height, path.c_str());
+      get_logger(), "calibration loaded: %dx%d from %s", loaded.image_width,
+      loaded.image_height, path.c_str());
   } catch (const std::exception & exc) {
-    calibration_.reset();
-    calibration_problem_ = exc.what();
+    {
+      std::lock_guard<std::mutex> lock(calibration_mutex_);
+      calibration_.reset();
+      calibration_problem_ = exc.what();
+    }
     RCLCPP_ERROR(get_logger(), "calibration rejected: %s", exc.what());
   }
 }
-
-std::unique_ptr<CameraBackend> CameraNode::make_backend()
+//相机
+std::shared_ptr<CameraBackend> CameraNode::make_backend()
 {
   try {
-    auto backend = std::make_unique<MvsBackend>(config_.mvs);
+    auto backend = std::make_shared<MvsBackend>(config_.mvs);
     backend->open();
     RCLCPP_INFO(get_logger(), "MVS backend opened: %s", backend->describe().c_str());
     return backend;
@@ -195,7 +207,7 @@ std::unique_ptr<CameraBackend> CameraNode::make_backend()
 
 void CameraNode::close_backend()
 {
-  std::unique_ptr<CameraBackend> backend;
+  std::shared_ptr<CameraBackend> backend;
   {
     std::lock_guard<std::mutex> lock(backend_mutex_);
     backend = std::move(backend_);
@@ -219,12 +231,12 @@ void CameraNode::sleep_or_shutdown(double seconds)
 void CameraNode::acquire_loop()
 {
   while (!shutdown_.load()) {
-    CameraBackend * backend = nullptr;
+    std::shared_ptr<CameraBackend> backend;
     {
       std::lock_guard<std::mutex> lock(backend_mutex_);
-      backend = backend_.get();
+      backend = backend_;
     }
-    if (backend == nullptr) {
+    if (!backend) {
       auto candidate = make_backend();
       if (!candidate) {
         sleep_or_shutdown(config_.reconnect_backoff_s);
@@ -232,7 +244,7 @@ void CameraNode::acquire_loop()
       }
       std::lock_guard<std::mutex> lock(backend_mutex_);
       backend_ = std::move(candidate);
-      backend = backend_.get();
+      backend = backend_;
     }
 
     std::optional<Frame> frame;
@@ -269,14 +281,23 @@ void CameraNode::publish_frame(const Frame & frame)
 {
   auto image = frame_to_image(frame, config_.frame_id);
   sensor_msgs::msg::CameraInfo info;
+  std::optional<Calibration> calibration_snapshot;
+  {
+    std::lock_guard<std::mutex> lock(calibration_mutex_);
+    calibration_snapshot = calibration_;
+  }
   try {
-    const Calibration * calibration = calibration_.has_value() ? &*calibration_ : nullptr;
+    const Calibration * calibration =
+      calibration_snapshot.has_value() ? &*calibration_snapshot : nullptr;
     info = build_camera_info(
       frame.width, frame.height, config_.frame_id, image.header.stamp, calibration);
   } catch (const CalibrationMismatchError & exc) {
     // Resolution changed since calibration: never rescale silently.
-    calibration_.reset();
-    calibration_problem_ = exc.what();
+    {
+      std::lock_guard<std::mutex> lock(calibration_mutex_);
+      calibration_.reset();
+      calibration_problem_ = exc.what();
+    }
     RCLCPP_ERROR(get_logger(), "calibration no longer valid: %s", exc.what());
     info = build_camera_info(
       frame.width, frame.height, config_.frame_id, image.header.stamp, nullptr);
@@ -288,13 +309,21 @@ void CameraNode::publish_frame(const Frame & frame)
 void CameraNode::publish_status()
 {
   const auto snapshot = health_->snapshot();
-  CameraBackend * backend = nullptr;
+  std::shared_ptr<CameraBackend> backend;
   {
     std::lock_guard<std::mutex> lock(backend_mutex_);
-    backend = backend_.get();
+    backend = backend_;
   }
   const std::string description =
     backend != nullptr ? backend->describe() : "backend=mvs (not open)";
+
+  bool calibrated = false;
+  std::optional<std::string> calibration_problem;
+  {
+    std::lock_guard<std::mutex> lock(calibration_mutex_);
+    calibrated = calibration_.has_value();
+    calibration_problem = calibration_problem_;
+  }
 
   uint8_t level = diagnostic_msgs::msg::DiagnosticStatus::OK;
   if (snapshot.state == StreamState::kBackendError) {
@@ -340,8 +369,8 @@ void CameraNode::publish_status()
   add("consecutive_misses", std::to_string(snapshot.consecutive_misses));
   add("consecutive_errors", std::to_string(snapshot.consecutive_errors));
   add("backend_reopens", std::to_string(snapshot.backend_reopens));
-  add("calibrated", calibration_.has_value() ? "True" : "False");
-  if (calibration_problem_.has_value()) {add("calibration_problem", *calibration_problem_);}
+  add("calibrated", calibrated ? "True" : "False");
+  if (calibration_problem.has_value()) {add("calibration_problem", *calibration_problem);}
   add("describe", description);
 
   diagnostic_msgs::msg::DiagnosticArray array;

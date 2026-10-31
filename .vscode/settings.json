@@ -3,6 +3,20 @@
   "python.analysis.extraPaths": [
     "/opt/ros/jazzy/lib/python3.12/site-packages"
   ],
+  "C_Cpp.default.compileCommands": "${workspaceFolder}/build/compile_commands.json",
+  "C_Cpp.default.cppStandard": "c++17",
+  "C_Cpp.default.cStandard": "c17",
+  "C_Cpp.default.intelliSenseMode": "linux-gcc-x64",
+  "C_Cpp.intelliSenseCacheSize": 256,
+  "C_Cpp.intelliSenseMemoryLimit": 1024,
+  "C_Cpp.maxConcurrentThreads": 2,
+  "C_Cpp.files.exclude": {
+    "**/build/**": true,
+    "**/install/**": true,
+    "**/log/**": true,
+    "src/yolo_ros-main/**": true
+  },
+  "cmake.sourceDirectory": "/home/asd/vision_ws/src/hikrobot_camera_ros2",
   "files.exclude": {
     "**/__pycache__": true,
     "**/*.pyc": true
@@ -16,6 +30,5 @@
   "files.associations": {
     "*.msg": "plaintext",
     "*.srv": "plaintext"
-  },
-  "cmake.sourceDirectory": "/home/asd/vision_ws/src/hikrobot_camera_ros2"
+  }
 }

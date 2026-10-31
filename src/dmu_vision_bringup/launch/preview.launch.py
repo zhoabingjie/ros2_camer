@@ -85,8 +85,8 @@ def generate_launch_description():
                 "calibration_file",
                 default_value="",
                 description=(
-                    "camera_calibration YAML. Empty means uncalibrated; image_proc then "
-                    "passes the image through instead of rectifying with invented intrinsics."
+                    "camera_calibration YAML. Empty means uncalibrated; image_proc will "
+                    "not produce a rectified image with invented intrinsics."
                 ),
             ),
             DeclareLaunchArgument(

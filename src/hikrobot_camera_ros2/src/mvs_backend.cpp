@@ -19,6 +19,7 @@
 #include "hikrobot_camera_ros2/mvs_backend.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <cstdlib>
 #include <cstring>
@@ -254,6 +255,7 @@ struct MvsApi
     void *, unsigned char *, unsigned int, MV_FRAME_OUT_INFO_EX *, unsigned int){nullptr};
   int (*convert_pixel_type)(void *, MV_CC_PIXEL_CONVERT_PARAM_EX *){nullptr};
   int (*set_enum_value)(void *, const char *, unsigned int){nullptr};
+  int (*set_float_value)(void *, const char *, float){nullptr};
   int (*set_int_value_ex)(void *, const char *, int64_t){nullptr};
   int (*get_int_value_ex)(void *, const char *, MVCC_INTVALUE_EX *){nullptr};
   int (*get_optimal_packet_size)(void *){nullptr};
@@ -287,6 +289,7 @@ struct MvsApi
     need(get_one_frame_timeout, "MV_CC_GetOneFrameTimeout");
     need(convert_pixel_type, "MV_CC_ConvertPixelTypeEx");
     need(set_enum_value, "MV_CC_SetEnumValue");
+    need(set_float_value, "MV_CC_SetFloatValue");
     need(set_int_value_ex, "MV_CC_SetIntValueEx");
     need(get_int_value_ex, "MV_CC_GetIntValueEx");
     need(get_optimal_packet_size, "MV_CC_GetOptimalPacketSize");
@@ -392,6 +395,34 @@ std::string normalise_serial(const unsigned char * raw, std::size_t max_len)
   while (len < max_len && raw[len] != 0) {++len;}
   return std::string(reinterpret_cast<const char *>(raw), len);
 }
+
+std::string lower_copy(std::string value)
+{
+  std::transform(value.begin(), value.end(), value.begin(),
+    [](unsigned char c) {return static_cast<char>(std::tolower(c));});
+  return value;
+}
+
+bool is_gige_device(const MV_CC_DEVICE_INFO * info)
+{
+  return info != nullptr && (info->nTLayerType & MV_GIGE_DEVICE) != 0;
+}
+
+bool is_usb_device(const MV_CC_DEVICE_INFO * info)
+{
+  return info != nullptr && (info->nTLayerType & MV_USB_DEVICE) != 0;
+}
+
+std::string device_serial(const MV_CC_DEVICE_INFO * info)
+{
+  if (is_gige_device(info)) {
+    return normalise_serial(info->SpecialInfo.stGigEInfo.chSerialNumber, 16);
+  }
+  if (is_usb_device(info)) {
+    return normalise_serial(info->SpecialInfo.stUsb3VInfo.chSerialNumber, 64);
+  }
+  return {};
+}
 }  // namespace
 #endif  // HIKROBOT_MVS_AVAILABLE
 
@@ -426,7 +457,7 @@ std::string MvsBackend::describe() const
 {
   const auto & report = probe();
   std::ostringstream os;
-  os << "backend=mvs requires_hardware=true implemented=";
+  os << "backend=mvs transport=" << options_.transport << " requires_hardware=true implemented=";
 #ifdef HIKROBOT_MVS_AVAILABLE
   os << "true";
 #else
@@ -442,10 +473,16 @@ std::string MvsBackend::describe() const
 void MvsBackend::open()
 {
   if (handle_ != nullptr) {close();}
+  const std::string transport = lower_copy(options_.transport);
+  if (transport != "auto" && transport != "gige" && transport != "usb") {
+    throw BackendUnavailableError(
+            "invalid mvs_transport='" + options_.transport +
+            "'; expected auto, gige or usb");
+  }
   const auto & report = probe();
   if (!report.library_found()) {
     throw BackendUnavailableError(
-            std::string("Hikrobot MVS SDK not found. Cannot open an MV-CS050-10GM camera.\n") +
+            std::string("Hikrobot MVS SDK not found. Cannot open a Hikrobot camera.\n") +
             report.summary() +
             "\nACTION: install the *Linux* MVS SDK (x86_64) and re-run.");
   }
@@ -476,7 +513,7 @@ void MvsBackend::open()
   sdk_version_ = version.str();
 
   MV_CC_DEVICE_INFO_LIST devices{};
-  int rc = api->enum_devices(MV_GIGE_DEVICE, &devices);
+  int rc = api->enum_devices(MV_GIGE_DEVICE | MV_USB_DEVICE, &devices);
   if (rc != MV_OK) {
     throw std::runtime_error("MV_CC_EnumDevices failed: " + mvs_error_text(rc));
   }
@@ -488,11 +525,19 @@ void MvsBackend::open()
     for (unsigned int i = 0; i < devices.nDeviceNum; ++i) {
       const MV_CC_DEVICE_INFO * info = devices.pDeviceInfo[i];
       if (info == nullptr) {continue;}
-      const auto & gige = info->SpecialInfo.stGigEInfo;
-      devs << " [GigE model='" << normalise_serial(gige.chModelName, 32)
-           << "' serial='" << normalise_serial(gige.chSerialNumber, 16)
-           << "' ip=" << format_ip(gige.nCurrentIp)
-           << " mask=" << format_ip(gige.nCurrentSubNetMask) << "]";
+      if (is_gige_device(info)) {
+        const auto & gige = info->SpecialInfo.stGigEInfo;
+        devs << " [GigE model='" << normalise_serial(gige.chModelName, 32)
+             << "' serial='" << normalise_serial(gige.chSerialNumber, 16)
+             << "' ip=" << format_ip(gige.nCurrentIp)
+             << " mask=" << format_ip(gige.nCurrentSubNetMask) << "]";
+      } else if (is_usb_device(info)) {
+        const auto & usb = info->SpecialInfo.stUsb3VInfo;
+        devs << " [USB3 model='" << normalise_serial(usb.chModelName, 64)
+             << "' serial='" << normalise_serial(usb.chSerialNumber, 64)
+             << "' vid=0x" << std::hex << usb.idVendor
+             << " pid=0x" << usb.idProduct << std::dec << "]";
+      }
     }
     device_summary_ = devs.str();
   }
@@ -500,24 +545,38 @@ void MvsBackend::open()
   if (devices.nDeviceNum == 0) {
     throw BackendUnavailableError(
             std::string("no Hikvision camera found by the MVS SDK (") +
-            device_summary_ + ", sdk_version=" + sdk_version_ + "). Checklist:\n"
+            device_summary_ + ", sdk_version=" + sdk_version_ + ", transport=" +
+            transport + "). Checklist:\n"
             "  1. camera powered? (LED on)\n"
-            "  2. Ethernet cable from camera to the host/bridged adapter?\n"
-            "  3. is the camera on the same L2 segment as this interface?\n"
-            "  4. run the SDK's set_rp_filter.sh --mode=2 on the host for cross-subnet discovery");
+            "  2. GigE: camera cable and host/VM bridge ready?\n"
+            "  3. USB3: camera USB interface passed through to this VM?\n"
+            "  4. are camera and host on the same L2 segment for GigE discovery?");
   }
 
-  if (devices.nDeviceNum != 1U) {
-    throw BackendUnavailableError(
-            "single-camera mode requires exactly one GigE camera, but found " +
-            std::to_string(devices.nDeviceNum) + " (" + device_summary_ +
-            "). Disconnect the extra cameras.");
+  const MV_CC_DEVICE_INFO * chosen = nullptr;
+  std::vector<const MV_CC_DEVICE_INFO *> matching;
+  for (unsigned int i = 0; i < devices.nDeviceNum; ++i) {
+    const MV_CC_DEVICE_INFO * info = devices.pDeviceInfo[i];
+    const bool gige = is_gige_device(info);
+    const bool usb = is_usb_device(info);
+    if (!gige && !usb) {continue;}
+    if (transport == "gige" && !gige) {continue;}
+    if (transport == "usb" && !usb) {continue;}
+    if (!options_.serial_number.empty() && device_serial(info) != options_.serial_number) {continue;}
+    matching.push_back(info);
   }
-  const MV_CC_DEVICE_INFO * chosen = devices.pDeviceInfo[0];
-  if (chosen == nullptr || (chosen->nTLayerType & MV_GIGE_DEVICE) == 0) {
+  if (matching.empty()) {
     throw BackendUnavailableError(
-            "the only enumerated device is not a valid GigE camera (" + device_summary_ + ")");
+            "no MVS camera matched transport='" + transport + "'" +
+            (options_.serial_number.empty() ? "" : " serial='" + options_.serial_number + "'") +
+            " (" + device_summary_ + ")");
   }
+  if (matching.size() != 1U) {
+    throw BackendUnavailableError(
+            "single-camera mode found multiple matching devices (" + device_summary_ +
+            "). Set mvs_serial_number to select one.");
+  }
+  chosen = matching.front();
 
   rc = api->create_handle(&handle_, chosen);
   if (rc != MV_OK) {throw std::runtime_error("MV_CC_CreateHandle failed: " + mvs_error_text(rc));}
@@ -562,13 +621,14 @@ void MvsBackend::open()
     warn_if(
       api->set_enum_value(handle_, "ExposureAuto", 0), "ExposureAuto=Off");
     warn_if(
-      api->set_int_value_ex(handle_, "ExposureTime", static_cast<int64_t>(options_.exposure_us)),
+      api->set_float_value(
+        handle_, "ExposureTime", static_cast<float>(options_.exposure_us)),
       "ExposureTime");
   }
   if (options_.gain > 0.0) {
     warn_if(api->set_enum_value(handle_, "GainAuto", 0), "GainAuto=Off");
     warn_if(
-      api->set_int_value_ex(handle_, "Gain", static_cast<int64_t>(options_.gain)), "Gain");
+      api->set_float_value(handle_, "Gain", static_cast<float>(options_.gain)), "Gain");
   }
 
   // GigE: enlarge the packet size to reduce per-packet overhead / loss.

@@ -5,8 +5,15 @@ manually and recorded in extras/docs/TEST_REPORT.md.
 """
 
 import pytest
+from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus, KeyValue
 
-from dmu_vision_tools.health_check import _durability_of, _reliability_of, build_parser
+from dmu_vision_tools.health_check import (
+    _durability_of,
+    _reliability_of,
+    build_parser,
+    normalize_diagnostic_level,
+    summarize_diagnostics,
+)
 from dmu_vision_tools.topic_probe import Durability, Reliability
 
 
@@ -49,6 +56,27 @@ def test_durability_adapter_accepts_rclpy_style_enums(name, expected):
 def test_reliability_adapter_falls_back_to_string_form():
     assert _reliability_of("ReliabilityPolicy.BEST_EFFORT") is Reliability.BEST_EFFORT
     assert _reliability_of("ReliabilityPolicy.RELIABLE") is Reliability.RELIABLE
+
+
+def test_diagnostics_keep_camera_and_obstacle_state_separate():
+    message = DiagnosticArray()
+    camera = DiagnosticStatus()
+    camera.name = "camera_node: stream"
+    camera.level = DiagnosticStatus.ERROR
+    camera.message = "backend_error: no Hikvision camera"
+    obstacle = DiagnosticStatus()
+    obstacle.name = "visual_obstacle_node: perception"
+    obstacle.level = DiagnosticStatus.WARN
+    obstacle.message = "candidate: waiting"
+    obstacle.values = [KeyValue(key="state", value="candidate")]
+    message.status = [camera, obstacle]
+
+    summary = summarize_diagnostics(message)
+
+    assert summary["camera_node: stream"] == (
+        normalize_diagnostic_level(DiagnosticStatus.ERROR), "backend_error")
+    assert summary["visual_obstacle_node: perception"] == (
+        normalize_diagnostic_level(DiagnosticStatus.WARN), "candidate")
 
 
 def test_parser_defaults_match_the_documented_interface():

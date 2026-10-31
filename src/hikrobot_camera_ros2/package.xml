@@ -4,7 +4,7 @@
   <name>hikrobot_camera_ros2</name>
   <version>0.2.0</version>
   <description>
-    Hikrobot (Hikvision Machine Vision) MV-CS050-10GM camera adapter for ROS 2 Jazzy.
+    Hikrobot (Hikvision Machine Vision) GigE / USB3 Vision camera adapter for ROS 2 Jazzy.
     Real MVS acquisition, honest uncalibrated CameraInfo, stream diagnostics,
     and clean SDK lifecycle. C++17 / rclcpp.
   </description>

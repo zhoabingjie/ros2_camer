@@ -101,17 +101,17 @@ cd ~/vision_ws
 source /opt/ros/jazzy/setup.bash
 source install/setup.bash
 
-ros2 launch hikrobot_camera_ros2 camera.launch.py
+ros2 launch hikrobot_camera_ros2 camera.launch.py mvs_transport:=auto
 ```
 
-当前驱动只支持一台 GigE 相机，检测到多台会拒绝启动。
+当前驱动支持一台海康 GigE 或 USB3 Vision 相机；多台匹配设备时设置 `mvs_serial_number`。
 
 
 ## 6. 当前硬件状态
 
 - Linux MVS SDK 已安装。
 - 当前 MVS 枚举：`devices=0`。
-- 当前 VMware 没有相机桥接网卡，宿主 Realtek 以太网仍为 `Disconnected / 0 bps`。
+- 当前 VMware 未检测到海康 USB 设备，实体以太网也未连接。
 - 因此真实相机取流、真实预览和标定仍未验收。
 
 ## 7. 常见错误

@@ -34,6 +34,10 @@ def generate_launch_description():
     yolo_params = LaunchConfiguration("yolo_params_file")
     frame_id = LaunchConfiguration("frame_id")
     calibration_file = LaunchConfiguration("calibration_file")
+    mvs_transport = LaunchConfiguration("mvs_transport")
+    mvs_serial_number = LaunchConfiguration("mvs_serial_number")
+    mvs_exposure_us = LaunchConfiguration("mvs_exposure_us")
+    mvs_gain = LaunchConfiguration("mvs_gain")
     yolo_input = LaunchConfiguration("yolo_input_topic")
     start_camera = LaunchConfiguration("start_camera")
     start_detector = LaunchConfiguration("start_detector")
@@ -53,6 +57,10 @@ def generate_launch_description():
                 "frame_id": frame_id,
                 "calibration_file": calibration_file,
                 "require_camera_at_startup": True,
+                "mvs_transport": mvs_transport,
+                "mvs_serial_number": mvs_serial_number,
+                "mvs_exposure_us": mvs_exposure_us,
+                "mvs_gain": mvs_gain,
             },
         ],
     )
@@ -114,6 +122,18 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument("frame_id", default_value="camera_optical_frame"),
             DeclareLaunchArgument("calibration_file", default_value=""),
+            DeclareLaunchArgument("mvs_transport", default_value="auto"),
+            DeclareLaunchArgument("mvs_serial_number", default_value=""),
+            DeclareLaunchArgument(
+                "mvs_exposure_us",
+                default_value="0.0",
+                description="Exposure time in microseconds; 0 keeps the camera setting",
+            ),
+            DeclareLaunchArgument(
+                "mvs_gain",
+                default_value="0.0",
+                description="Gain value; 0 keeps the camera setting",
+            ),
             DeclareLaunchArgument("yolo_input_topic", default_value="/camera/image_raw"),
             DeclareLaunchArgument(
                 "visual_obstacle_params_file",

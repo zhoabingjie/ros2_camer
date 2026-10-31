@@ -19,3 +19,6 @@ thirdparty/
 
 # ---- test artifacts ----
 extras/logs/
+
+# ---- MVS SDK runtime logs ----
+MvSdkLog/

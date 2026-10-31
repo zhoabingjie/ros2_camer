@@ -72,6 +72,7 @@ TEST(MvsBackend, DescribeReportsSdkAndImplementationState)
   const auto probe = probe_sdk();
 
   EXPECT_NE(description.find("requires_hardware=true"), std::string::npos) << description;
+  EXPECT_NE(description.find("transport=auto"), std::string::npos) << description;
   EXPECT_NE(description.find("implemented="), std::string::npos) << description;
   EXPECT_EQ(
     description.find("sdk_library_found=true") != std::string::npos,
@@ -87,4 +88,14 @@ TEST(MvsBackend, DeclaresMvsNameAndHardwareRequirement)
   EXPECT_EQ(backend.name(), "mvs");
   EXPECT_TRUE(backend.requires_hardware())
     << "the real camera backend must declare that it needs hardware";
+}
+
+TEST(MvsBackend, RejectsUnknownTransportBeforeHardwareAccess)
+{
+  hikrobot_camera_ros2::MvsBackendOptions options;
+  options.transport = "bluetooth";
+  MvsBackend backend(options);
+  EXPECT_THROW(
+    backend.open(),
+    hikrobot_camera_ros2::BackendUnavailableError);
 }

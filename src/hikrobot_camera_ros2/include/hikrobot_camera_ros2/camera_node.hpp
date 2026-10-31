@@ -87,7 +87,7 @@ private:
   void declare_parameters();
   Config read_config();
   void load_calibration(const std::string & path);
-  std::unique_ptr<CameraBackend> make_backend();
+  std::shared_ptr<CameraBackend> make_backend();
   void close_backend();
   void acquire_loop();
   void publish_frame(const Frame & frame);
@@ -96,7 +96,9 @@ private:
 
   Config config_;
   std::unique_ptr<StreamHealthMonitor> health_;
-  std::unique_ptr<CameraBackend> backend_;
+  // Acquisition and diagnostics both keep a temporary shared reference while
+  // using the backend, so reconnecting cannot destroy it mid-call.
+  std::shared_ptr<CameraBackend> backend_;
   mutable std::mutex backend_mutex_;
   std::thread worker_;
   std::atomic<bool> shutdown_{false};
@@ -105,6 +107,7 @@ private:
 
   std::optional<Calibration> calibration_;
   std::optional<std::string> calibration_problem_;
+  mutable std::mutex calibration_mutex_;
   std::optional<StreamState> last_state_;
 
   rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr image_pub_;

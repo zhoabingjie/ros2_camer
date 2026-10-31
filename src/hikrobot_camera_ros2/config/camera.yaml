@@ -1,4 +1,4 @@
-# Hikrobot MV-CS050-10GM single-camera adapter.
+# Hikrobot MVS single-camera adapter (GigE or USB3 Vision).
 /camera_node:
   ros__parameters:
     frame_id: camera_optical_frame
@@ -22,8 +22,10 @@
     qos_reliability: best_effort
     qos_depth: 5
 
-    # --- real MVS camera ---
+    # --- real MVS camera: auto, gige, usb ---
     sdk_lib_candidates: [""]
+    mvs_transport: auto
+    mvs_serial_number: ""
     mvs_pixel_format: ""
     mvs_width: 0
     mvs_height: 0

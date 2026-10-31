@@ -1,4 +1,100 @@
 # 测试报告
+
+## 2026-10-31 全量验收（当前代码）
+
+本次验收不连接真实相机，真实验收状态单独列在文末结论中。
+
+### 构建
+
+```bash
+cd ~/vision_ws
+source /opt/ros/jazzy/setup.bash
+colcon build --symlink-install --parallel-workers 2 \
+  --cmake-args \
+  -DONNXRUNTIME_ROOT=$HOME/vision_ws/thirdparty/onnxruntime-linux-x64-1.20.0 \
+  -DFETCHCONTENT_SOURCE_DIR_YOLO_HFHUB=$HOME/vision_ws/thirdparty/huggingface-hub-cpp
+```
+
+结果：
+
+```text
+Summary: 10 packages finished
+BUILD_RC=0
+```
+
+### 全工作区测试
+
+测试使用本地模型和本地图片，避免无网络时 Hugging Face 下载超时：
+
+```bash
+export YOLO_ROS_TEST_MODEL_DIR=$HOME/vision_ws/models
+export YOLO_ROS_TEST_IMAGE=$HOME/vision_ws/models/demo_scene.jpg
+export YOLO_ROS_TEST_PEOPLE_IMAGE=$HOME/vision_ws/models/demo_scene.jpg
+export QT_QPA_PLATFORM=offscreen
+colcon test --parallel-workers 2
+colcon test-result --verbose
+```
+
+结果：
+
+```text
+391 tests, 0 errors, 0 failures, 10 skipped
+TEST_RC=0
+```
+
+10 个跳过项来自缺少可选 YOLO 分割/姿态/分类/动态 batch 模型和无 CUDA 的分支，不是失败。
+
+### 启动接口检查
+
+以下命令均能正常解析参数：
+
+```bash
+ros2 launch hikrobot_camera_ros2 camera.launch.py --show-args
+ros2 launch dmu_vision_bringup vision.launch.py --show-args
+ros2 launch dmu_vision_bringup preview.launch.py --show-args
+ros2 launch dmu_vision_bringup calibration.launch.py --show-args
+```
+
+`camera.launch.py` 和 `vision.launch.py` 均暴露 `mvs_transport`、`mvs_serial_number`、`mvs_exposure_us` 和 `mvs_gain`。曝光/增益通过 MVS 浮点接口设置。
+
+### 无相机行为
+
+显式 USB 启动：
+
+```bash
+ros2 launch hikrobot_camera_ros2 camera.launch.py \
+  mvs_transport:=usb mvs_exposure_us:=5000.0 mvs_gain:=1.5
+```
+
+结果：
+
+```text
+devices=0, sdk_version=4.8.1.2, transport=usb
+camera driver startup failed
+CAMERA_RC=1
+```
+
+重试模式 `require_camera_at_startup:=false` 在 4 秒窗口内持续报告 `backend_error`，未产生伪造图像；`timeout` 返回 124 是测试主动终止，不是程序崩溃。
+
+### 静态边界检查
+
+- 生产源码不包含 Mock、图片回放或合成图像后端。
+- 生产入口不发布 `/cmd_vel`。
+- 生产 YOLO 配置为 `detection`、`tracking`、`debug`，不启用 `detection3d`。
+- 未标定 CameraInfo 仍发布全零 K/P，不伪造内参。
+- 真实相机图像、真实取流和标定仍未验收。
+
+### 当前硬件状态
+
+- `lsusb` 未发现海康 USB3 Vision 设备。
+- Ubuntu 当前只有 `ens33`，没有相机专用 GigE 接口。
+- MVS 枚举结果为 `devices=0`。
+- 因此不能把本次离线测试结果写成真实相机已通过。
+
+历史章节中的 Mock 记录仅保留为历史证据；当前代码已删除 Mock 入口。
+
+---
+
 ## 2026-10-21 MVS 参考实现审计与驱动加固
 
 参考仓库：`https://github.com/Chlzzz/HikRobotCamera_Node`。
