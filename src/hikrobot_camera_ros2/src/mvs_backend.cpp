@@ -45,25 +45,26 @@ namespace
 void push_unique(std::vector<std::string> & target, const std::string & value)
 {
   if (!value.empty() && std::find(target.begin(), target.end(), value) == target.end()) {
-    target.push_back(value);
+    target.push_back(value);//如果 value 非空、且 target 里还没有它，就追加到末尾
   }
 }
 
-std::vector<std::string> sdk_env_roots()
+std::vector<std::string> sdk_env_roots()//读 3 个环境变量，返回它们的值
 {
-  std::vector<std::string> roots;
+  std::vector<std::string> roots;//声明一个空 vector，用来装"用户告诉我们的 SDK 根目录"
   for (const char * name : {"MVCAM_SDK_PATH", "MVS_SDK_ROOT", "HIKROBOT_MVS_ROOT"}) {
+//这三个名字是海康 MVS SDK 在不同系统上使用的环境变量名
     const char * value = std::getenv(name);
     if (value != nullptr) {push_unique(roots, value);}
-  }
+  }//查看这三个环境变量里哪些设置了，把它们的值收集成一个列表返回
   return roots;
 }
 
-const std::vector<std::string> & lib_dirs()
+const std::vector<std::string> & lib_dirs()//lib_dirs()：.so 动态库可能在哪些目录里
 {
   static const std::vector<std::string> kDirs = []() {
       std::vector<std::string> dirs;
-      auto add_root = [&dirs](const std::filesystem::path & root) {
+      auto add_root = [&dirs](const std::filesystem::path & root) {//给定一个"SDK 根目录"，把该 SDK 可能的 lib 子目录都加进 dirs
           push_unique(dirs, (root / "lib" / "64").string());
           push_unique(dirs, (root / "lib" / "x86_64").string());
           push_unique(dirs, (root / "lib" / "aarch64").string());
@@ -71,11 +72,12 @@ const std::vector<std::string> & lib_dirs()
           push_unique(dirs, (root / "lib").string());
         };
       for (const auto & root : sdk_env_roots()) {add_root(root);}
-      const char * common_runenv = std::getenv("MVCAM_COMMON_RUNENV");
+      const char * common_runenv = std::getenv("MVCAM_COMMON_RUNENV");//是海康 SDK 的一个特殊环境变量，它通常直接指向库目录本身
       if (common_runenv != nullptr) {
-        push_unique(dirs, common_runenv);
-        push_unique(dirs, (std::filesystem::path(common_runenv) / "64").string());
+        push_unique(dirs, common_runenv);//把环境变量的值直接加入
+        push_unique(dirs, (std::filesystem::path(common_runenv) / "64").string());//再试一下它下面的 64 子目录
       }
+//CMake 配置的路径
 #ifdef HIKROBOT_MVS_CONFIGURED_INCLUDE_DIR
       const auto configured_include = std::filesystem::path(HIKROBOT_MVS_CONFIGURED_INCLUDE_DIR);
       add_root(configured_include.parent_path().parent_path());
@@ -94,7 +96,8 @@ const std::vector<std::string> & lib_dirs()
 
 constexpr const char * kLibPrefix = "libMvCameraControl.so";
 
-const std::vector<std::string> & header_candidates()
+//kLibPrefix  库文件名前缀常量，用于扫目录
+const std::vector<std::string> & header_candidates()//收集所有可能的头文件路径
 {
   static const std::vector<std::string> kPaths = []() {
       std::vector<std::string> paths;
@@ -119,8 +122,9 @@ const std::vector<std::string> & header_candidates()
   return kPaths;
 }
 
-const std::vector<std::string> & env_hints()
+const std::vector<std::string> & env_hints()//env_hints()：哪些环境变量会影响 SDK 查找（只用于报告）
 {
+  //列出需要报告的环境变量名（不读值）
   static const std::vector<std::string> kHints{
     "MVCAM_SDK_PATH", "MVS_SDK_ROOT", "HIKROBOT_MVS_ROOT",
     "MVCAM_COMMON_RUNENV", "MVCAM_GENICAM_CLPROTOCOL"};
@@ -130,29 +134,32 @@ const std::vector<std::string> & env_hints()
 /// @brief Files in @p dir whose name starts with @p prefix. Never throws.
 std::vector<std::string> scan_for_prefix(const std::string & dir, const std::string & prefix)
 {
+  //扫目录找文件  dir：要扫的目录  prefix：文件名前缀
   std::vector<std::string> found;
   std::error_code ec;
   if (!std::filesystem::is_directory(dir, ec)) {return found;}
   try {
     for (const auto & entry : std::filesystem::directory_iterator(
-        dir, std::filesystem::directory_options::skip_permission_denied))
+        dir, std::filesystem::directory_options::skip_permission_denied))//遇到没权限的子目录，跳过不报错
     {
       const std::string name = entry.path().filename().string();
-      if (name.rfind(prefix, 0) == 0) {found.push_back(entry.path().string());}
+//entry.path()：该项的完整路径  .filename()：取文件名部分
+      if (name.rfind(prefix, 0) == 0) {found.push_back(entry.path().string());}//前缀匹配
     }
   } catch (const std::filesystem::filesystem_error &) {
     // Unreadable directory: report what was found, never fabricate success.
   }
-  std::sort(found.begin(), found.end());
-  return found;
+  std::sort(found.begin(), found.end());//排序
+  return found;//lib_dirs()返回一堆目录-> scan_for_prefix(每个目录, "libMvCameraControl.so")->找到实际的 .so 文件路径
 }
 
-int64_t now_ns()
+int64_t now_ns()//取当前时间纳秒
 {
   using namespace std::chrono;
   return duration_cast<nanoseconds>(system_clock::now().time_since_epoch()).count();
 }
 
+//算图像字节数，带溢出检查
 std::size_t checked_image_bytes(int width, int height, std::size_t channels)
 {
   if (width <= 0 || height <= 0) {
@@ -160,9 +167,10 @@ std::size_t checked_image_bytes(int width, int height, std::size_t channels)
             "MVS returned invalid image dimensions: " + std::to_string(width) + "x" +
             std::to_string(height));
   }
+//检查通道数
   if (channels == 0U) {throw std::invalid_argument("image channel count must be positive");}
 
-  const std::size_t pixels =
+  const std::size_t pixels =//算像素数
     static_cast<std::size_t>(width) * static_cast<std::size_t>(height);
   if (pixels > std::numeric_limits<std::size_t>::max() / channels) {
     throw std::overflow_error("image byte count overflows size_t");
@@ -171,15 +179,17 @@ std::size_t checked_image_bytes(int width, int height, std::size_t channels)
   if (bytes > std::numeric_limits<unsigned int>::max()) {
     throw std::overflow_error(
             "image byte count exceeds MVS API unsigned int limit: " + std::to_string(bytes));
-  }
+  }//检查是否超过 MVS API 的限制
+//为什么要检查 unsigned int 上限？
+//因为后面 grab() 里调用 SDK 的 get_one_frame_timeout 时，缓冲区大小参数是 unsigned int：
   return bytes;
 }
 }  // namespace
 
-std::string MvsSdkProbe::summary() const
+std::string MvsSdkProbe::summary() const//记录了"找到了啥"和"搜了哪些地方"
 {
   std::ostringstream os;
-  os << "MVS SDK probe:";
+  os << "MVS SDK probe:";//往缓冲区写标题
   os << "\n  shared library : ";
   if (library_found()) {
     for (const auto & p : lib_paths) {os << p << " ";}
@@ -209,8 +219,9 @@ std::string MvsSdkProbe::summary() const
   return os.str();
 }
 
-MvsSdkProbe probe_sdk(const std::vector<std::string> & extra_lib_candidates)
+MvsSdkProbe probe_sdk(const std::vector<std::string> & extra_lib_candidates)//执行探测
 {
+  //扫描所有可能的位置，收集：找到的 .so、找到的头文件、设了的环境变量，全部打包进 MvsSdkProbe 返回
   MvsSdkProbe probe;
   probe.searched_lib_dirs = lib_dirs();
   probe.searched_header_paths = header_candidates();
@@ -221,13 +232,13 @@ MvsSdkProbe probe_sdk(const std::vector<std::string> & extra_lib_candidates)
       push_unique(probe.lib_paths, candidate);
     }
   }
-  for (const auto & dir : lib_dirs()) {
+  for (const auto & dir : lib_dirs()) {//扫描所有目录找 .so
     for (const auto & path : scan_for_prefix(dir, kLibPrefix)) {push_unique(probe.lib_paths, path);}
   }
-  for (const auto & path : header_candidates()) {
+  for (const auto & path : header_candidates()) {//检查头文件是否存在
     if (std::filesystem::is_regular_file(path, ec)) {push_unique(probe.header_paths, path);}
   }
-  for (const auto & name : env_hints()) {
+  for (const auto & name : env_hints()) {//记录设了哪些环境变量
     const char * value = std::getenv(name.c_str());
     if (value != nullptr) {probe.env.emplace_back(name, std::string(value));}
   }
@@ -238,6 +249,7 @@ MvsSdkProbe probe_sdk(const std::vector<std::string> & extra_lib_candidates)
 namespace
 {
 /// @brief Function table resolved from libMvCameraControl.so at runtime.
+//一个函数指针表：每个成员对应厂商 SDK 的一个函数，加上一个 lib 句柄。所有函数指针初始为 nullptr，load 成功后才填上真实地址
 struct MvsApi
 {
   void * lib{nullptr};
@@ -263,19 +275,24 @@ struct MvsApi
   bool load(const std::string & path, std::string & error)
   {
     *this = MvsApi{};
-    lib = ::dlopen(path.c_str(), RTLD_NOW | RTLD_GLOBAL);
+//用 dlopen 打开 path 指向的 .so，加载时立即解析所有符号，并让符号对后续加载的库可见
+    lib = ::dlopen(path.c_str(), RTLD_NOW | RTLD_GLOBAL);//用于运行时打开动态库 RTLD_NOW：立即解析所有符号
     if (lib == nullptr) {
       error = std::string("dlopen(") + path + ") failed: " + ::dlerror();
       return false;
     }
     bool ok = true;
+//need：一个 lambda，作用是"按名字查函数地址并赋给 fn，查不到就记录错误"
+//[&]：捕获所有外部变量的引用（lib、error、ok）
     auto need = [&](auto & fn, const char * name) {
         fn = reinterpret_cast<std::remove_reference_t<decltype(fn)>>(::dlsym(lib, name));
+//用 dlsym 查 name 的地址（返回 void *），强转成 fn 原本的类型（去掉引用），赋给 fn
         if (fn == nullptr) {
           error += std::string(error.empty() ? "" : ", ") + "missing symbol " + name;
           ok = false;
         }
       };
+//逐个查 16 个函数
     need(initialize, "MV_CC_Initialize");
     need(finalize, "MV_CC_Finalize");
     need(get_sdk_version, "MV_CC_GetSDKVersion");
@@ -295,7 +312,7 @@ struct MvsApi
     need(get_optimal_packet_size, "MV_CC_GetOptimalPacketSize");
     if (!ok) {
       ::dlclose(lib);
-      *this = MvsApi{};
+      *this = MvsApi{};//重置
     }
     return ok;
   }
@@ -304,11 +321,11 @@ struct MvsApi
 std::string mvs_error_text(int code)
 {
   std::ostringstream os;
-  os << "0x" << std::hex << static_cast<unsigned int>(code);
+  os << "0x" << std::hex << static_cast<unsigned int>(code);//以十六进制打印错误码
   switch (static_cast<unsigned int>(code)) {
     case MV_OK: os << " (MV_OK)"; break;
     case MV_E_NODATA: os << " (MV_E_NODATA: timeout, no data)"; break;
-    case MV_E_PARAMETER: os << " (MV_E_PARAMETER)"; break;
+    case MV_E_PARAMETER: os << " (MV_E_PARAMETER)"; break;//参数错
     case MV_E_PARAMETER_RANGE: os << " (MV_E_PARAMETER_RANGE)"; break;
     case MV_E_ACCESS_DENIED: os << " (MV_E_ACCESS_DENIED: no permission)"; break;
     default: break;
@@ -316,13 +333,14 @@ std::string mvs_error_text(int code)
   return os.str();
 }
 
+//这四个变量是整份文件的"全局状态"，管理"SDK 到底加载了没有"
 std::mutex g_api_mutex;
 MvsApi g_api;
 bool g_api_loaded = false;
 bool g_api_initialized = false;
 
 MvsApi * ensure_api(const std::vector<std::string> & candidates, std::string & error)
-{
+{//确保 SDK 已加载并初始化
   std::lock_guard<std::mutex> lock(g_api_mutex);
   if (g_api_loaded) {
     if (g_api.lib == nullptr) {error = "SDK previously failed to load"; return nullptr;}
@@ -330,16 +348,16 @@ MvsApi * ensure_api(const std::vector<std::string> & candidates, std::string & e
   }
   // Explicit candidates come first. CMake/environment-derived probe paths keep
   // their discovery order, with /opt/MVS only as a fallback.
-  std::vector<std::string> paths;
-  for (const auto & candidate : candidates) {push_unique(paths, candidate);}
-  for (const auto & path : probe_sdk().lib_paths) {push_unique(paths, path);}
-  for (const auto & path : paths) {
+  std::vector<std::string> paths;//第一次加载——准备候选路径
+  for (const auto & candidate : candidates) {push_unique(paths, candidate);}//先加用户显式指定的（candidates 参数）
+  for (const auto & path : probe_sdk().lib_paths) {push_unique(paths, path);}//再加自动探测到的（probe_sdk().lib_paths
+  for (const auto & path : paths) {//逐个尝试加载
     std::string err;
     if (!g_api.load(path, err)) {
       error += (error.empty() ? "" : "; ") + err;
       continue;
     }
-    const int init_rc = g_api.initialize();
+    const int init_rc = g_api.initialize();//加载成功，尝试 initialize
     if (init_rc != MV_OK) {
       error += (error.empty() ? "" : "; ") +
         path + ": MV_CC_Initialize failed: " + mvs_error_text(init_rc);
@@ -355,7 +373,7 @@ MvsApi * ensure_api(const std::vector<std::string> & candidates, std::string & e
   return nullptr;
 }
 
-void finalize_mvs_sdk_locked()
+void finalize_mvs_sdk_locked()//清理
 {
   if (g_api_initialized && g_api.finalize != nullptr) {
     (void)g_api.finalize();
@@ -365,12 +383,13 @@ void finalize_mvs_sdk_locked()
   g_api = MvsApi{};
 }
 
-void set_env_if_unset(const char * key, const std::string & value)
+void set_env_if_unset(const char * key, const std::string & value)//设环境变量,用在open() 里
 {
+  //如果用户没设，根据 SDK 路径自动补上；用户设了，尊重用户的。
   if (std::getenv(key) == nullptr) {::setenv(key, value.c_str(), 0);}
 }
 
-std::string format_ip(unsigned int ip)
+std::string format_ip(unsigned int ip)//32 位整数转 IP 字符串,用在open()
 {
   std::ostringstream os;
   os << ((ip >> 24) & 0xFF) << "." << ((ip >> 16) & 0xFF) << "."
@@ -378,21 +397,21 @@ std::string format_ip(unsigned int ip)
   return os.str();
 }
 
-std::string infer_sdk_root(const std::string & header_path)
+std::string infer_sdk_root(const std::string & header_path)//从 header 路径反推 SDK 根目录
 {
-  auto include_dir = std::filesystem::path(header_path).parent_path();
+  auto include_dir = std::filesystem::path(header_path).parent_path();//取父目录
   const std::string dir_name = include_dir.filename().string();
-  if (dir_name == "x86_64" || dir_name == "aarch64") {
+  if (dir_name == "x86_64" || dir_name == "aarch64") {//如果父目录是架构名，再往上跳一级
     include_dir = include_dir.parent_path();
   }
   if (include_dir.filename() == "include") {return include_dir.parent_path().string();}
   return include_dir.string();
-}
+}//用在open(),用户没设环境变量时，从"找到的头文件路径"自动推 SDK 根，补上环境变量。
 
 std::string normalise_serial(const unsigned char * raw, std::size_t max_len)
-{
+{//把厂商 SDK 的定长 unsigned char 数组转成 std::string，正确处理没有终止符的情况
   std::size_t len = 0;
-  while (len < max_len && raw[len] != 0) {++len;}
+  while (len < max_len && raw[len] != 0) {++len;}//手动找 \0
   return std::string(reinterpret_cast<const char *>(raw), len);
 }
 
@@ -426,7 +445,7 @@ std::string device_serial(const MV_CC_DEVICE_INFO * info)
 }  // namespace
 #endif  // HIKROBOT_MVS_AVAILABLE
 
-void finalize_mvs_sdk()
+void finalize_mvs_sdk()//外部可调用的清理入口
 {
 #ifdef HIKROBOT_MVS_AVAILABLE
   std::lock_guard<std::mutex> lock(g_api_mutex);
@@ -434,7 +453,7 @@ void finalize_mvs_sdk()
 #endif
 }
 
-MvsBackend::MvsBackend(MvsBackendOptions options)
+MvsBackend::MvsBackend(MvsBackendOptions options)//构造函数
 : options_(std::move(options))
 {
 }
@@ -447,8 +466,8 @@ MvsBackend::~MvsBackend()
   close();
 }
 
-const MvsSdkProbe & MvsBackend::probe() const
-{
+const MvsSdkProbe & MvsBackend::probe() const// 懒加载探测结果 用到才做，做完缓存
+{//返回 SDK 探测结果。第一次调用时扫描并缓存，后续调用直接返回缓存（引用，不拷贝）
   if (!probe_.has_value()) {probe_ = probe_sdk(options_.sdk_lib_candidates);}
   return *probe_;
 }
@@ -470,17 +489,17 @@ std::string MvsBackend::describe() const
   return os.str();
 }
 
-void MvsBackend::open()
+void MvsBackend::open()//打开相机
 {
-  if (handle_ != nullptr) {close();}
+  if (handle_ != nullptr) {close();}//handle_：保存 SDK 设备句柄的成员变量
   const std::string transport = lower_copy(options_.transport);
   if (transport != "auto" && transport != "gige" && transport != "usb") {
     throw BackendUnavailableError(
             "invalid mvs_transport='" + options_.transport +
             "'; expected auto, gige or usb");
   }
-  const auto & report = probe();
-  if (!report.library_found()) {
+  const auto & report = probe();//probe() 负责检查 MVS SDK 的相关信息，例如 SDK 动态库和头文件是否存在
+  if (!report.library_found()) {//library_found()：检查是否找到 SDK 动态库
     throw BackendUnavailableError(
             std::string("Hikrobot MVS SDK not found. Cannot open a Hikrobot camera.\n") +
             report.summary() +
@@ -513,7 +532,7 @@ void MvsBackend::open()
   sdk_version_ = version.str();
 
   MV_CC_DEVICE_INFO_LIST devices{};
-  int rc = api->enum_devices(MV_GIGE_DEVICE | MV_USB_DEVICE, &devices);
+  int rc = api->enum_devices(MV_GIGE_DEVICE | MV_USB_DEVICE, &devices);//enum_devices() 对应海康 MVS SDK 的设备枚举操作
   if (rc != MV_OK) {
     throw std::runtime_error("MV_CC_EnumDevices failed: " + mvs_error_text(rc));
   }
@@ -596,10 +615,11 @@ void MvsBackend::open()
       }
     };
 
+//设置图像像素格式
   if (!options_.pixel_format.empty()) {
     // MV_CC_SetEnumValue takes the numeric enum value, so the PixelType.h
     // constants are used directly instead of a string lookup.
-    if (options_.pixel_format == "Mono8") {
+    if (options_.pixel_format == "Mono8") {//读取之前保存的像素格式配置
       warn_if(api->set_enum_value(handle_, "PixelFormat", PixelType_Gvsp_Mono8), "PixelFormat=Mono8");
     } else if (options_.pixel_format == "BGR8") {
       warn_if(api->set_enum_value(handle_, "PixelFormat", PixelType_Gvsp_BGR8_Packed), "PixelFormat=BGR8");
@@ -611,13 +631,14 @@ void MvsBackend::open()
               "'; supported: Mono8, BGR8, RGB8");
     }
   }
+//设置图像宽度和高度
   if (options_.width > 0) {
     warn_if(api->set_int_value_ex(handle_, "Width", options_.width), "Width");
   }
   if (options_.height > 0) {
     warn_if(api->set_int_value_ex(handle_, "Height", options_.height), "Height");
   }
-  if (options_.exposure_us > 0.0) {
+  if (options_.exposure_us > 0.0) {//相机曝光
     warn_if(
       api->set_enum_value(handle_, "ExposureAuto", 0), "ExposureAuto=Off");
     warn_if(
@@ -625,7 +646,7 @@ void MvsBackend::open()
         handle_, "ExposureTime", static_cast<float>(options_.exposure_us)),
       "ExposureTime");
   }
-  if (options_.gain > 0.0) {
+  if (options_.gain > 0.0) {//增益
     warn_if(api->set_enum_value(handle_, "GainAuto", 0), "GainAuto=Off");
     warn_if(
       api->set_float_value(handle_, "Gain", static_cast<float>(options_.gain)), "Gain");
@@ -633,13 +654,14 @@ void MvsBackend::open()
 
   // GigE: enlarge the packet size to reduce per-packet overhead / loss.
   if ((chosen->nTLayerType & MV_GIGE_DEVICE) != 0) {
-    int packet = options_.packet_size;
+    int packet = options_.packet_size;//packet 是网口传输参数
     if (packet <= 0) {packet = api->get_optimal_packet_size(handle_);}
     if (packet > 0) {
       (void)api->set_int_value_ex(handle_, "GevSCPSPacketSize", packet);
     }
   }
 
+//申请图像缓冲区
   MVCC_INTVALUE_EX payload{};
   rc = api->get_int_value_ex(handle_, "PayloadSize", &payload);
   if (rc != MV_OK || payload.nCurValue <= 0) {
@@ -647,7 +669,7 @@ void MvsBackend::open()
   }
   buffer_.assign(static_cast<std::size_t>(payload.nCurValue), 0);
 
-  rc = api->start_grabbing(handle_);
+  rc = api->start_grabbing(handle_);//启动采集
   if (rc != MV_OK) {throw std::runtime_error("MV_CC_StartGrabbing failed: " + mvs_error_text(rc));}
   return;
 #else
