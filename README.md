@@ -32,6 +32,20 @@ source install/setup.bash
 ros2 launch dmu_vision_bringup vision.launch.py
 ```
 
+正式入口默认会自动打开一个 `rqt_image_view` 窗口。窗口不预设图像话题，可以在下拉框中自行选择：
+
+```text
+/camera/image_raw
+/vision/debug_image
+/vision/obstacle_debug_image
+```
+
+不需要 GUI 时：
+
+```bash
+ros2 launch dmu_vision_bringup vision.launch.py start_viewer:=false
+```
+
 只启动真实相机：
 
 ```bash

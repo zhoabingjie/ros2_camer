@@ -43,6 +43,7 @@ def generate_launch_description():
     start_detector = LaunchConfiguration("start_detector")
     start_obstacle = LaunchConfiguration("start_obstacle")
     start_rectify = LaunchConfiguration("start_rectify")
+    start_viewer = LaunchConfiguration("start_viewer")
 
     camera_node = Node(
         package="hikrobot_camera_ros2",
@@ -109,6 +110,15 @@ def generate_launch_description():
         parameters=[LaunchConfiguration("visual_obstacle_params_file")],
     )
 
+    viewer = Node(
+        package="rqt_image_view",
+        executable="rqt_image_view",
+        name="vision_image_viewer",
+        output="screen",
+        additional_env={"QT_QPA_PLATFORM": "xcb"},
+        condition=IfCondition(start_viewer),
+    )
+
     return LaunchDescription(
         [
             DeclareLaunchArgument(
@@ -148,9 +158,15 @@ def generate_launch_description():
                 default_value="false",
                 description="Requires valid calibration; otherwise image_proc emits no image_rect",
             ),
+            DeclareLaunchArgument(
+                "start_viewer",
+                default_value="true",
+                description="Open one rqt_image_view window; choose the topic in the GUI",
+            ),
             camera_node,
             rectifier,
             detector,
             obstacle,
+            viewer,
         ]
     )

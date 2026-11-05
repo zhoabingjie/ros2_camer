@@ -30,10 +30,11 @@ ros2 launch dmu_vision_bringup vision.launch.py
 
 默认行为：
 
-- `backend:=mvs`
+- 默认真实 MVS 相机，`mvs_transport:=auto`
 - 启动相机、YOLO 和视觉障碍物节点
 - 发布稳定 `/vision/*` 接口
-- 不启动图像窗口
+- 默认自动打开一个 `rqt_image_view`，可在窗口内自行选择图像话题
+- 可设置 `start_viewer:=false` 关闭图像窗口
 - 真实相机打开失败时关闭整个 launch
 
 只启动相机：
