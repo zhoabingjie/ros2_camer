@@ -19,7 +19,10 @@ def generate_launch_description():
                 name="rviz",
                 output="screen",
                 arguments=["-d", config],
-                additional_env={"QT_QPA_PLATFORM": "xcb"},
+                additional_env={
+                    "QT_QPA_PLATFORM": "xcb",
+                    "LIBGL_ALWAYS_SOFTWARE": "1",
+                },
             )
         ]
     )
