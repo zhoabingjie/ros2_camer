@@ -442,6 +442,41 @@ std::string device_serial(const MV_CC_DEVICE_INFO * info)
   }
   return {};
 }
+
+bool is_bayer_pixel_type(unsigned int pixel_type)
+{
+  switch (pixel_type) {
+    case PixelType_Gvsp_BayerGR8:
+    case PixelType_Gvsp_BayerRG8:
+    case PixelType_Gvsp_BayerGB8:
+    case PixelType_Gvsp_BayerBG8:
+    case PixelType_Gvsp_BayerRBGG8:
+    case PixelType_Gvsp_BayerBRGG8:
+    case PixelType_Gvsp_BayerGR10:
+    case PixelType_Gvsp_BayerRG10:
+    case PixelType_Gvsp_BayerGB10:
+    case PixelType_Gvsp_BayerBG10:
+    case PixelType_Gvsp_BayerGR12:
+    case PixelType_Gvsp_BayerRG12:
+    case PixelType_Gvsp_BayerGB12:
+    case PixelType_Gvsp_BayerBG12:
+    case PixelType_Gvsp_BayerGR10_Packed:
+    case PixelType_Gvsp_BayerRG10_Packed:
+    case PixelType_Gvsp_BayerGB10_Packed:
+    case PixelType_Gvsp_BayerBG10_Packed:
+    case PixelType_Gvsp_BayerGR12_Packed:
+    case PixelType_Gvsp_BayerRG12_Packed:
+    case PixelType_Gvsp_BayerGB12_Packed:
+    case PixelType_Gvsp_BayerBG12_Packed:
+    case PixelType_Gvsp_BayerGR16:
+    case PixelType_Gvsp_BayerRG16:
+    case PixelType_Gvsp_BayerGB16:
+    case PixelType_Gvsp_BayerBG16:
+      return true;
+    default:
+      return false;
+  }
+}
 }  // namespace
 #endif  // HIKROBOT_MVS_AVAILABLE
 
@@ -625,10 +660,18 @@ void MvsBackend::open()//打开相机
       warn_if(api->set_enum_value(handle_, "PixelFormat", PixelType_Gvsp_BGR8_Packed), "PixelFormat=BGR8");
     } else if (options_.pixel_format == "RGB8") {
       warn_if(api->set_enum_value(handle_, "PixelFormat", PixelType_Gvsp_RGB8_Packed), "PixelFormat=RGB8");
+    } else if (options_.pixel_format == "BayerRG8") {
+      warn_if(api->set_enum_value(handle_, "PixelFormat", PixelType_Gvsp_BayerRG8), "PixelFormat=BayerRG8");
+    } else if (options_.pixel_format == "BayerBG8") {
+      warn_if(api->set_enum_value(handle_, "PixelFormat", PixelType_Gvsp_BayerBG8), "PixelFormat=BayerBG8");
+    } else if (options_.pixel_format == "BayerGB8") {
+      warn_if(api->set_enum_value(handle_, "PixelFormat", PixelType_Gvsp_BayerGB8), "PixelFormat=BayerGB8");
+    } else if (options_.pixel_format == "BayerGR8") {
+      warn_if(api->set_enum_value(handle_, "PixelFormat", PixelType_Gvsp_BayerGR8), "PixelFormat=BayerGR8");
     } else {
       throw std::runtime_error(
               "unsupported mvs_pixel_format '" + options_.pixel_format +
-              "'; supported: Mono8, BGR8, RGB8");
+              "'; supported: Mono8, BGR8, RGB8, BayerRG8, BayerBG8, BayerGB8, BayerGR8");
     }
   }
 //设置图像宽度和高度
@@ -765,7 +808,10 @@ std::optional<Frame> MvsBackend::grab(double timeout_s)
   } else {
     // Non-direct formats (Bayer, YUV, packed mono...) are converted using the
     // dimensions reported for this exact frame, never hard-coded dimensions.
-    const std::size_t dst_size = checked_image_bytes(frame.width, frame.height, 1U);
+    const bool is_color =
+      is_bayer_pixel_type(static_cast<unsigned int>(info.enPixelType));
+    const std::size_t dst_size =
+      checked_image_bytes(frame.width, frame.height, is_color ? 3U : 1U);
     std::vector<uint8_t> converted(dst_size);
     MV_CC_PIXEL_CONVERT_PARAM_EX cvt{};
     cvt.nWidth = static_cast<unsigned int>(frame.width);
@@ -773,7 +819,8 @@ std::optional<Frame> MvsBackend::grab(double timeout_s)
     cvt.enSrcPixelType = info.enPixelType;
     cvt.pSrcData = buffer_.data();
     cvt.nSrcDataLen = info.nFrameLen;
-    cvt.enDstPixelType = PixelType_Gvsp_Mono8;
+    cvt.enDstPixelType =
+      is_color ? PixelType_Gvsp_BGR8_Packed : PixelType_Gvsp_Mono8;
     cvt.pDstBuffer = converted.data();
     cvt.nDstBufferSize = static_cast<unsigned int>(converted.size());
     const int crc = api->convert_pixel_type(handle_, &cvt);
@@ -785,7 +832,7 @@ std::optional<Frame> MvsBackend::grab(double timeout_s)
               "MV_CC_ConvertPixelTypeEx returned nDstLen=" +
               std::to_string(cvt.nDstLen) + " expected=" + std::to_string(dst_size));
     }
-    frame.encoding = "mono8";
+    frame.encoding = is_color ? "bgr8" : "mono8";
     frame.data = std::move(converted);
   }
 
