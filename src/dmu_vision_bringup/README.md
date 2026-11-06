@@ -60,6 +60,12 @@ ros2 launch dmu_vision_bringup vision.launch.py start_camera:=false
 
 ## 图像预览
 
+RViz2 已提供预设 QoS 配置，默认订阅 `/camera/image_raw` 且 Reliability 为 `Best Effort`：
+
+```bash
+ros2 launch dmu_vision_bringup rviz.launch.py
+```
+
 每条命令都需要在已 source 的独立终端中运行。
 
 原始相机图像：
@@ -105,6 +111,7 @@ QT_QPA_PLATFORM=xcb ros2 launch dmu_vision_bringup image_viewer.launch.py \
 | `preview.launch.py` | 相机 + 可选 image_proc 校正 |
 | `detection.launch.py` | 旧上游 YOLO 启动，保留 `/yolo/cam0/*` |
 | `calibration.launch.py` | Jazzy camera_calibration 流程 |
+| `rviz.launch.py` | RViz2 预设 Best Effort 图像显示 |
 
 
 稳定接口说明见 `extras/docs/INTERFACES.md`。

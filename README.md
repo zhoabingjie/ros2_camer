@@ -40,6 +40,12 @@ ros2 launch dmu_vision_bringup vision.launch.py
 /vision/obstacle_debug_image
 ```
 
+需要 RViz2 时，使用项目内置的 Best Effort 配置：
+
+```bash
+ros2 launch dmu_vision_bringup rviz.launch.py
+```
+
 不需要 GUI 时：
 
 ```bash
