@@ -16,7 +16,7 @@
     "**/log/**": true,
     "src/yolo_ros-main/**": true
   },
-  "cmake.sourceDirectory": "/home/asd/vision_ws/src/hikrobot_camera_ros2",
+  "cmake.sourceDirectory": "/home/asd/vision_ws/src/camera_driver",
   "files.exclude": {
     "**/__pycache__": true,
     "**/*.pyc": true

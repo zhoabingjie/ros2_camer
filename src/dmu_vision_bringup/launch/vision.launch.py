@@ -26,7 +26,7 @@ from launch_ros.actions import Node
 
 
 def generate_launch_description():
-    camera_share = get_package_share_directory("hikrobot_camera_ros2")
+    camera_share = get_package_share_directory("camera_driver")
     bringup_share = get_package_share_directory("dmu_vision_bringup")
     obstacle_share = get_package_share_directory("visual_obstacle_avoidance")
 
@@ -46,7 +46,7 @@ def generate_launch_description():
     start_viewer = LaunchConfiguration("start_viewer")
 
     camera_node = Node(
-        package="hikrobot_camera_ros2",
+        package="camera_driver",
         executable="camera_node",
         name="camera_node",
         output="screen",

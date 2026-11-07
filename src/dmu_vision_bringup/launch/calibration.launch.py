@@ -22,7 +22,7 @@ from launch_ros.actions import Node
 
 def generate_launch_description():
     camera_params = os.path.join(
-        get_package_share_directory("hikrobot_camera_ros2"), "config", "camera.yaml"
+        get_package_share_directory("camera_driver"), "config", "camera.yaml"
     )
 
     camera_params_file = LaunchConfiguration("camera_params_file")
@@ -33,7 +33,7 @@ def generate_launch_description():
     camera_name = LaunchConfiguration("camera_name")
 
     camera_node = Node(
-        package="hikrobot_camera_ros2",
+        package="camera_driver",
         executable="camera_node",
         name="camera_node",
         output="screen",

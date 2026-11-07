@@ -26,7 +26,7 @@ from launch_ros.actions import Node
 
 def generate_launch_description():
     camera_params = os.path.join(
-        get_package_share_directory("hikrobot_camera_ros2"), "config", "camera.yaml"
+        get_package_share_directory("camera_driver"), "config", "camera.yaml"
     )
 
     camera_params_file = LaunchConfiguration("camera_params_file")
@@ -36,7 +36,7 @@ def generate_launch_description():
     start_rectify = LaunchConfiguration("start_rectify")
 
     camera_node = Node(
-        package="hikrobot_camera_ros2",
+        package="camera_driver",
         executable="camera_node",
         name="camera_node",
         output="screen",
@@ -74,7 +74,7 @@ def generate_launch_description():
             DeclareLaunchArgument(
                 "camera_params_file",
                 default_value=camera_params,
-                description="hikrobot_camera_ros2 parameter file",
+                description="camera_driver parameter file",
             ),
             DeclareLaunchArgument(
                 "frame_id",

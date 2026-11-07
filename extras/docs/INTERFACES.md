@@ -6,7 +6,7 @@
 
 | 节点 | 包 | 作用 |
 |---|---|---|
-| `/camera_node` | `hikrobot_camera_ros2` | 真实 MVS 单相机图像源 |
+| `/camera_node` | `camera_driver` | 真实 MVS 单相机图像源 |
 | `/yolo/yolo_node` | `yolo_ros` | YOLO 2D 检测、跟踪和 debug image |
 | `/visual_obstacle_node` | `visual_obstacle_avoidance` | 二维障碍物候选筛选与状态输出 |
 
@@ -39,7 +39,7 @@
 ### 启动
 
 ```bash
-ros2 launch hikrobot_camera_ros2 camera.launch.py
+ros2 launch camera_driver camera.launch.py
 ```
 
 ## 3. YOLO 节点

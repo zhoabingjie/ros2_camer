@@ -109,7 +109,7 @@ cd ~/vision_ws
 source /opt/ros/jazzy/setup.bash
 source install/setup.bash
 
-ros2 launch hikrobot_camera_ros2 camera.launch.py mvs_transport:=auto
+ros2 launch camera_driver camera.launch.py mvs_transport:=auto
 ```
 
 当前驱动支持一台海康 GigE 或 USB3 Vision 相机；多台匹配设备时设置 `mvs_serial_number`。

@@ -97,7 +97,7 @@ cd ~/vision_ws
 source /opt/ros/jazzy/setup.bash
 source install/setup.bash
 
-ros2 launch hikrobot_camera_ros2 camera.launch.py mvs_transport:=auto
+ros2 launch camera_driver camera.launch.py mvs_transport:=auto
 ```
 
 正常枚举会打印类似：

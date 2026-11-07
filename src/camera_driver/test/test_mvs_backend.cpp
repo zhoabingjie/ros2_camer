@@ -1,0 +1,101 @@
+// Copyright 2026 team3
+// SPDX-License-Identifier: Apache-2.0
+//
+// Contract under test: the MVS backend must never publish anything it cannot
+// verify. Depending on the machine it either reports the missing SDK, or (with
+// the SDK present) reports that no camera is reachable, or captures for real.
+// It must never return a fabricated frame.
+
+#include <gtest/gtest.h>
+
+#include <algorithm>
+#include <memory>
+#include <stdexcept>
+#include <string>
+
+#include "camera_driver/mvs_backend.hpp"
+
+using camera_driver::BackendUnavailableError;
+using camera_driver::MvsBackend;
+using camera_driver::probe_sdk;
+
+TEST(MvsBackend, ExtraCandidateThatDoesNotExistIsNotReportedAsFound)
+{
+  const std::string bogus = "/nonexistent/path/libMvCameraControl.so";
+  const auto probe = probe_sdk({bogus});
+  EXPECT_EQ(
+    std::find(probe.lib_paths.begin(), probe.lib_paths.end(), bogus), probe.lib_paths.end())
+    << "a nonexistent extra candidate must never be reported as found";
+}
+
+TEST(MvsBackend, ProbeReportsSearchedLocationsWhenNothingIsFound)
+{
+  const auto probe = probe_sdk();
+  if (probe.library_found()) {
+    GTEST_SKIP() << "MVS SDK is installed on this machine; the 'not found' path is not exercised";
+  }
+  EXPECT_FALSE(probe.headers_found());
+  const std::string summary = probe.summary();
+  EXPECT_NE(summary.find("NOT FOUND"), std::string::npos);
+  EXPECT_NE(summary.find("/opt/MVS/lib/64"), std::string::npos)
+    << "the report must name where it looked";
+}
+
+TEST(MvsBackend, OpenNeverSucceedsWithoutAWorkingCameraAndNeverInventsAFrame)
+{
+  MvsBackend backend;
+  const auto probe = probe_sdk();
+
+  std::string message;
+  try {
+    backend.open();
+    backend.close();
+    GTEST_SKIP() << "a camera is attached and the SDK works; capture path not exercised here";
+  } catch (const std::exception & exc) {
+    message = exc.what();
+  }
+
+  ASSERT_FALSE(message.empty()) << "open() must explain why it could not start";
+  if (!probe.library_found()) {
+    EXPECT_NE(message.find("MVS SDK not found"), std::string::npos) << message;
+    EXPECT_NE(message.find("ACTION"), std::string::npos) << message;
+  } else {
+    EXPECT_NE(message.find("MVS"), std::string::npos) << message;
+  }
+  EXPECT_THROW(backend.grab(0.0), std::exception);
+}
+
+TEST(MvsBackend, DescribeReportsSdkAndImplementationState)
+{
+  MvsBackend backend;
+  const std::string description = backend.describe();
+  const auto probe = probe_sdk();
+
+  EXPECT_NE(description.find("requires_hardware=true"), std::string::npos) << description;
+  EXPECT_NE(description.find("transport=auto"), std::string::npos) << description;
+  EXPECT_NE(description.find("implemented="), std::string::npos) << description;
+  EXPECT_EQ(
+    description.find("sdk_library_found=true") != std::string::npos,
+    probe.library_found()) << description;
+  EXPECT_EQ(
+    description.find("sdk_headers_found=true") != std::string::npos,
+    probe.headers_found()) << description;
+}
+
+TEST(MvsBackend, DeclaresMvsNameAndHardwareRequirement)
+{
+  MvsBackend backend;
+  EXPECT_EQ(backend.name(), "mvs");
+  EXPECT_TRUE(backend.requires_hardware())
+    << "the real camera backend must declare that it needs hardware";
+}
+
+TEST(MvsBackend, RejectsUnknownTransportBeforeHardwareAccess)
+{
+  camera_driver::MvsBackendOptions options;
+  options.transport = "bluetooth";
+  MvsBackend backend(options);
+  EXPECT_THROW(
+    backend.open(),
+    camera_driver::BackendUnavailableError);
+}

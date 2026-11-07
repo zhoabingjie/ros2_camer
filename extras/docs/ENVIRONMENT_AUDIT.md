@@ -459,7 +459,7 @@ model_ = yolo_ros::yolo::create_model(params);   // 最终使用 model_path
 ```
 vision_ws/src/
 ├── yolo_ros/                  # 上游源码副本（尽量不改）
-├── hikrobot_camera_ros2/      # 相机适配（按 B1/B2 结果决定实现方式）
+├── camera_driver/      # 相机适配（按 B1/B2 结果决定实现方式）
 ├── dmu_vision_interfaces/     # 仅在需要新消息时才创建（6.3 表明 MVP 可复用 yolo_msgs）
 ├── dmu_vision_bringup/        # launch + YAML + 文档入口
 └── dmu_vision_tools/          # 诊断/检查/延迟统计

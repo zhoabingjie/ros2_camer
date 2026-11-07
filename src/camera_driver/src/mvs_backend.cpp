@@ -1,0 +1,854 @@
+// Copyright 2026 team3
+// SPDX-License-Identifier: Apache-2.0
+//
+// Hikrobot MVS backend.
+//
+// Without the Linux MVS SDK this file only probes for it and reports precisely
+// what is missing (Phase 0/1 behaviour). When the SDK headers are present at
+// configure time (-DHIKROBOT_MVS_INCLUDE_DIR, default /opt/MVS/include) the real
+// acquisition path is compiled in.
+//
+// The vendor library is loaded with dlopen() rather than linked, on purpose:
+// package builds and SDK diagnostics still work without a hard vendor-link
+// dependency, while real capture is enabled only when the SDK is installed.
+//
+// Every symbol below was read from the SDK's own headers
+// (/opt/MVS/include/MvCameraControl.h, CameraParams.h, MvErrorDefine.h,
+// PixelType.h). Nothing here is guessed.
+
+#include "camera_driver/mvs_backend.hpp"
+
+#include <algorithm>
+#include <cctype>
+#include <chrono>
+#include <cstdlib>
+#include <cstring>
+#include <filesystem>
+#include <limits>
+#include <mutex>
+#include <sstream>
+#include <stdexcept>
+#include <string>
+#include <type_traits>
+#include <vector>
+
+#include <dlfcn.h>
+
+#ifdef HIKROBOT_MVS_AVAILABLE
+#include <MvCameraControl.h>
+#endif
+
+namespace camera_driver
+{
+namespace
+{
+void push_unique(std::vector<std::string> & target, const std::string & value)
+{
+  if (!value.empty() && std::find(target.begin(), target.end(), value) == target.end()) {
+    target.push_back(value);//如果 value 非空、且 target 里还没有它，就追加到末尾
+  }
+}
+
+std::vector<std::string> sdk_env_roots()//读 3 个环境变量，返回它们的值
+{
+  std::vector<std::string> roots;//声明一个空 vector，用来装"用户告诉我们的 SDK 根目录"
+  for (const char * name : {"MVCAM_SDK_PATH", "MVS_SDK_ROOT", "HIKROBOT_MVS_ROOT"}) {
+//这三个名字是海康 MVS SDK 在不同系统上使用的环境变量名
+    const char * value = std::getenv(name);
+    if (value != nullptr) {push_unique(roots, value);}
+  }//查看这三个环境变量里哪些设置了，把它们的值收集成一个列表返回
+  return roots;
+}
+
+const std::vector<std::string> & lib_dirs()//lib_dirs()：.so 动态库可能在哪些目录里
+{
+  static const std::vector<std::string> kDirs = []() {
+      std::vector<std::string> dirs;
+      auto add_root = [&dirs](const std::filesystem::path & root) {//给定一个"SDK 根目录"，把该 SDK 可能的 lib 子目录都加进 dirs
+          push_unique(dirs, (root / "lib" / "64").string());
+          push_unique(dirs, (root / "lib" / "x86_64").string());
+          push_unique(dirs, (root / "lib" / "aarch64").string());
+          push_unique(dirs, (root / "lib" / "32").string());
+          push_unique(dirs, (root / "lib").string());
+        };
+      for (const auto & root : sdk_env_roots()) {add_root(root);}
+      const char * common_runenv = std::getenv("MVCAM_COMMON_RUNENV");//是海康 SDK 的一个特殊环境变量，它通常直接指向库目录本身
+      if (common_runenv != nullptr) {
+        push_unique(dirs, common_runenv);//把环境变量的值直接加入
+        push_unique(dirs, (std::filesystem::path(common_runenv) / "64").string());//再试一下它下面的 64 子目录
+      }
+//CMake 配置的路径
+#ifdef HIKROBOT_MVS_CONFIGURED_INCLUDE_DIR
+      const auto configured_include = std::filesystem::path(HIKROBOT_MVS_CONFIGURED_INCLUDE_DIR);
+      add_root(configured_include.parent_path().parent_path());
+#endif
+      push_unique(dirs, "/opt/MVS/lib/64");
+      push_unique(dirs, "/opt/MVS/lib/32");
+      push_unique(dirs, "/opt/MVS/lib/aarch64");
+      push_unique(dirs, "/opt/MVS/lib/arm");
+      push_unique(dirs, "/usr/lib");
+      push_unique(dirs, "/usr/lib/x86_64-linux-gnu");
+      push_unique(dirs, "/usr/local/lib");
+      return dirs;
+    }();
+  return kDirs;
+}
+
+constexpr const char * kLibPrefix = "libMvCameraControl.so";
+
+//kLibPrefix  库文件名前缀常量，用于扫目录
+const std::vector<std::string> & header_candidates()//收集所有可能的头文件路径
+{
+  static const std::vector<std::string> kPaths = []() {
+      std::vector<std::string> paths;
+      auto add_root = [&paths](const std::filesystem::path & root) {
+          push_unique(paths, (root / "include" / "MvCameraControl.h").string());
+          push_unique(paths, (root / "include" / "x86_64" / "MvCameraControl.h").string());
+          push_unique(paths, (root / "include" / "aarch64" / "MvCameraControl.h").string());
+        };
+      for (const auto & root : sdk_env_roots()) {add_root(root);}
+#ifdef HIKROBOT_MVS_CONFIGURED_INCLUDE_DIR
+      push_unique(
+        paths,
+        (std::filesystem::path(HIKROBOT_MVS_CONFIGURED_INCLUDE_DIR) / "MvCameraControl.h").string());
+#endif
+      push_unique(paths, "/opt/MVS/include/MvCameraControl.h");
+      push_unique(paths, "/opt/MVS/include/x86_64/MvCameraControl.h");
+      push_unique(paths, "/opt/MVS/include/aarch64/MvCameraControl.h");
+      push_unique(paths, "/usr/include/MvCameraControl.h");
+      push_unique(paths, "/usr/local/include/MvCameraControl.h");
+      return paths;
+    }();
+  return kPaths;
+}
+
+const std::vector<std::string> & env_hints()//env_hints()：哪些环境变量会影响 SDK 查找（只用于报告）
+{
+  //列出需要报告的环境变量名（不读值）
+  static const std::vector<std::string> kHints{
+    "MVCAM_SDK_PATH", "MVS_SDK_ROOT", "HIKROBOT_MVS_ROOT",
+    "MVCAM_COMMON_RUNENV", "MVCAM_GENICAM_CLPROTOCOL"};
+  return kHints;
+}
+
+/// @brief Files in @p dir whose name starts with @p prefix. Never throws.
+std::vector<std::string> scan_for_prefix(const std::string & dir, const std::string & prefix)
+{
+  //扫目录找文件  dir：要扫的目录  prefix：文件名前缀
+  std::vector<std::string> found;
+  std::error_code ec;
+  if (!std::filesystem::is_directory(dir, ec)) {return found;}
+  try {
+    for (const auto & entry : std::filesystem::directory_iterator(
+        dir, std::filesystem::directory_options::skip_permission_denied))//遇到没权限的子目录，跳过不报错
+    {
+      const std::string name = entry.path().filename().string();
+//entry.path()：该项的完整路径  .filename()：取文件名部分
+      if (name.rfind(prefix, 0) == 0) {found.push_back(entry.path().string());}//前缀匹配
+    }
+  } catch (const std::filesystem::filesystem_error &) {
+    // Unreadable directory: report what was found, never fabricate success.
+  }
+  std::sort(found.begin(), found.end());//排序
+  return found;//lib_dirs()返回一堆目录-> scan_for_prefix(每个目录, "libMvCameraControl.so")->找到实际的 .so 文件路径
+}
+
+int64_t now_ns()//取当前时间纳秒
+{
+  using namespace std::chrono;
+  return duration_cast<nanoseconds>(system_clock::now().time_since_epoch()).count();
+}
+
+//算图像字节数，带溢出检查
+std::size_t checked_image_bytes(int width, int height, std::size_t channels)
+{
+  if (width <= 0 || height <= 0) {
+    throw std::runtime_error(
+            "MVS returned invalid image dimensions: " + std::to_string(width) + "x" +
+            std::to_string(height));
+  }
+//检查通道数
+  if (channels == 0U) {throw std::invalid_argument("image channel count must be positive");}
+
+  const std::size_t pixels =//算像素数
+    static_cast<std::size_t>(width) * static_cast<std::size_t>(height);
+  if (pixels > std::numeric_limits<std::size_t>::max() / channels) {
+    throw std::overflow_error("image byte count overflows size_t");
+  }
+  const std::size_t bytes = pixels * channels;
+  if (bytes > std::numeric_limits<unsigned int>::max()) {
+    throw std::overflow_error(
+            "image byte count exceeds MVS API unsigned int limit: " + std::to_string(bytes));
+  }//检查是否超过 MVS API 的限制
+//为什么要检查 unsigned int 上限？
+//因为后面 grab() 里调用 SDK 的 get_one_frame_timeout 时，缓冲区大小参数是 unsigned int：
+  return bytes;
+}
+}  // namespace
+
+std::string MvsSdkProbe::summary() const//记录了"找到了啥"和"搜了哪些地方"
+{
+  std::ostringstream os;
+  os << "MVS SDK probe:";//往缓冲区写标题
+  os << "\n  shared library : ";
+  if (library_found()) {
+    for (const auto & p : lib_paths) {os << p << " ";}
+  } else {
+    os << "NOT FOUND";
+  }
+  os << "\n  headers        : ";
+  if (headers_found()) {
+    for (const auto & p : header_paths) {os << p << " ";}
+  } else {
+    os << "NOT FOUND";
+  }
+  os << "\n  env hints      : ";
+  if (env.empty()) {
+    os << "none set";
+  } else {
+    for (const auto & kv : env) {os << kv.first << "=" << kv.second << " ";}
+  }
+  if (!library_found()) {
+    os << "\n  searched libs  : ";
+    for (const auto & d : searched_lib_dirs) {os << d << "/" << kLibPrefix << "* ";}
+  }
+  if (!headers_found()) {
+    os << "\n  searched hdrs  : ";
+    for (const auto & p : searched_header_paths) {os << p << " ";}
+  }
+  return os.str();
+}
+
+MvsSdkProbe probe_sdk(const std::vector<std::string> & extra_lib_candidates)//执行探测
+{
+  //扫描所有可能的位置，收集：找到的 .so、找到的头文件、设了的环境变量，全部打包进 MvsSdkProbe 返回
+  MvsSdkProbe probe;
+  probe.searched_lib_dirs = lib_dirs();
+  probe.searched_header_paths = header_candidates();
+
+  std::error_code ec;
+  for (const auto & candidate : extra_lib_candidates) {
+    if (!candidate.empty() && std::filesystem::exists(candidate, ec)) {
+      push_unique(probe.lib_paths, candidate);
+    }
+  }
+  for (const auto & dir : lib_dirs()) {//扫描所有目录找 .so
+    for (const auto & path : scan_for_prefix(dir, kLibPrefix)) {push_unique(probe.lib_paths, path);}
+  }
+  for (const auto & path : header_candidates()) {//检查头文件是否存在
+    if (std::filesystem::is_regular_file(path, ec)) {push_unique(probe.header_paths, path);}
+  }
+  for (const auto & name : env_hints()) {//记录设了哪些环境变量
+    const char * value = std::getenv(name.c_str());
+    if (value != nullptr) {probe.env.emplace_back(name, std::string(value));}
+  }
+  return probe;
+}
+
+#ifdef HIKROBOT_MVS_AVAILABLE
+namespace
+{
+/// @brief Function table resolved from libMvCameraControl.so at runtime.
+//一个函数指针表：每个成员对应厂商 SDK 的一个函数，加上一个 lib 句柄。所有函数指针初始为 nullptr，load 成功后才填上真实地址
+struct MvsApi
+{
+  void * lib{nullptr};
+  int (*initialize)(){nullptr};
+  int (*finalize)(){nullptr};
+  unsigned int (*get_sdk_version)(){nullptr};
+  int (*enum_devices)(unsigned int, MV_CC_DEVICE_INFO_LIST *){nullptr};
+  int (*create_handle)(void **, const MV_CC_DEVICE_INFO *){nullptr};
+  int (*open_device)(void *, unsigned int, unsigned short){nullptr};
+  int (*close_device)(void *){nullptr};
+  int (*destroy_handle)(void *){nullptr};
+  int (*start_grabbing)(void *){nullptr};
+  int (*stop_grabbing)(void *){nullptr};
+  int (*get_one_frame_timeout)(
+    void *, unsigned char *, unsigned int, MV_FRAME_OUT_INFO_EX *, unsigned int){nullptr};
+  int (*convert_pixel_type)(void *, MV_CC_PIXEL_CONVERT_PARAM_EX *){nullptr};
+  int (*set_enum_value)(void *, const char *, unsigned int){nullptr};
+  int (*set_float_value)(void *, const char *, float){nullptr};
+  int (*set_int_value_ex)(void *, const char *, int64_t){nullptr};
+  int (*get_int_value_ex)(void *, const char *, MVCC_INTVALUE_EX *){nullptr};
+  int (*get_optimal_packet_size)(void *){nullptr};
+
+  bool load(const std::string & path, std::string & error)
+  {
+    *this = MvsApi{};
+//用 dlopen 打开 path 指向的 .so，加载时立即解析所有符号，并让符号对后续加载的库可见
+    lib = ::dlopen(path.c_str(), RTLD_NOW | RTLD_GLOBAL);//用于运行时打开动态库 RTLD_NOW：立即解析所有符号
+    if (lib == nullptr) {
+      error = std::string("dlopen(") + path + ") failed: " + ::dlerror();
+      return false;
+    }
+    bool ok = true;
+//need：一个 lambda，作用是"按名字查函数地址并赋给 fn，查不到就记录错误"
+//[&]：捕获所有外部变量的引用（lib、error、ok）
+    auto need = [&](auto & fn, const char * name) {
+        fn = reinterpret_cast<std::remove_reference_t<decltype(fn)>>(::dlsym(lib, name));
+//用 dlsym 查 name 的地址（返回 void *），强转成 fn 原本的类型（去掉引用），赋给 fn
+        if (fn == nullptr) {
+          error += std::string(error.empty() ? "" : ", ") + "missing symbol " + name;
+          ok = false;
+        }
+      };
+//逐个查 16 个函数
+    need(initialize, "MV_CC_Initialize");
+    need(finalize, "MV_CC_Finalize");
+    need(get_sdk_version, "MV_CC_GetSDKVersion");
+    need(enum_devices, "MV_CC_EnumDevices");
+    need(create_handle, "MV_CC_CreateHandle");
+    need(open_device, "MV_CC_OpenDevice");
+    need(close_device, "MV_CC_CloseDevice");
+    need(destroy_handle, "MV_CC_DestroyHandle");
+    need(start_grabbing, "MV_CC_StartGrabbing");
+    need(stop_grabbing, "MV_CC_StopGrabbing");
+    need(get_one_frame_timeout, "MV_CC_GetOneFrameTimeout");
+    need(convert_pixel_type, "MV_CC_ConvertPixelTypeEx");
+    need(set_enum_value, "MV_CC_SetEnumValue");
+    need(set_float_value, "MV_CC_SetFloatValue");
+    need(set_int_value_ex, "MV_CC_SetIntValueEx");
+    need(get_int_value_ex, "MV_CC_GetIntValueEx");
+    need(get_optimal_packet_size, "MV_CC_GetOptimalPacketSize");
+    if (!ok) {
+      ::dlclose(lib);
+      *this = MvsApi{};//重置
+    }
+    return ok;
+  }
+};
+
+std::string mvs_error_text(int code)
+{
+  std::ostringstream os;
+  os << "0x" << std::hex << static_cast<unsigned int>(code);//以十六进制打印错误码
+  switch (static_cast<unsigned int>(code)) {
+    case MV_OK: os << " (MV_OK)"; break;
+    case MV_E_NODATA: os << " (MV_E_NODATA: timeout, no data)"; break;
+    case MV_E_PARAMETER: os << " (MV_E_PARAMETER)"; break;//参数错
+    case MV_E_PARAMETER_RANGE: os << " (MV_E_PARAMETER_RANGE)"; break;
+    case MV_E_ACCESS_DENIED: os << " (MV_E_ACCESS_DENIED: no permission)"; break;
+    default: break;
+  }
+  return os.str();
+}
+
+//这四个变量是整份文件的"全局状态"，管理"SDK 到底加载了没有"
+std::mutex g_api_mutex;
+MvsApi g_api;
+bool g_api_loaded = false;
+bool g_api_initialized = false;
+
+MvsApi * ensure_api(const std::vector<std::string> & candidates, std::string & error)
+{//确保 SDK 已加载并初始化
+  std::lock_guard<std::mutex> lock(g_api_mutex);
+  if (g_api_loaded) {
+    if (g_api.lib == nullptr) {error = "SDK previously failed to load"; return nullptr;}
+    return &g_api;
+  }
+  // Explicit candidates come first. CMake/environment-derived probe paths keep
+  // their discovery order, with /opt/MVS only as a fallback.
+  std::vector<std::string> paths;//第一次加载——准备候选路径
+  for (const auto & candidate : candidates) {push_unique(paths, candidate);}//先加用户显式指定的（candidates 参数）
+  for (const auto & path : probe_sdk().lib_paths) {push_unique(paths, path);}//再加自动探测到的（probe_sdk().lib_paths
+  for (const auto & path : paths) {//逐个尝试加载
+    std::string err;
+    if (!g_api.load(path, err)) {
+      error += (error.empty() ? "" : "; ") + err;
+      continue;
+    }
+    const int init_rc = g_api.initialize();//加载成功，尝试 initialize
+    if (init_rc != MV_OK) {
+      error += (error.empty() ? "" : "; ") +
+        path + ": MV_CC_Initialize failed: " + mvs_error_text(init_rc);
+      ::dlclose(g_api.lib);
+      g_api = MvsApi{};
+      continue;
+    }
+    g_api_loaded = true;
+    g_api_initialized = true;
+    return &g_api;
+  }
+  g_api_loaded = true;
+  return nullptr;
+}
+
+void finalize_mvs_sdk_locked()//清理
+{
+  if (g_api_initialized && g_api.finalize != nullptr) {
+    (void)g_api.finalize();
+    g_api_initialized = false;
+  }
+  g_api_loaded = false;
+  g_api = MvsApi{};
+}
+
+void set_env_if_unset(const char * key, const std::string & value)//设环境变量,用在open() 里
+{
+  //如果用户没设，根据 SDK 路径自动补上；用户设了，尊重用户的。
+  if (std::getenv(key) == nullptr) {::setenv(key, value.c_str(), 0);}
+}
+
+std::string format_ip(unsigned int ip)//32 位整数转 IP 字符串,用在open()
+{
+  std::ostringstream os;
+  os << ((ip >> 24) & 0xFF) << "." << ((ip >> 16) & 0xFF) << "."
+     << ((ip >> 8) & 0xFF) << "." << (ip & 0xFF);
+  return os.str();
+}
+
+std::string infer_sdk_root(const std::string & header_path)//从 header 路径反推 SDK 根目录
+{
+  auto include_dir = std::filesystem::path(header_path).parent_path();//取父目录
+  const std::string dir_name = include_dir.filename().string();
+  if (dir_name == "x86_64" || dir_name == "aarch64") {//如果父目录是架构名，再往上跳一级
+    include_dir = include_dir.parent_path();
+  }
+  if (include_dir.filename() == "include") {return include_dir.parent_path().string();}
+  return include_dir.string();
+}//用在open(),用户没设环境变量时，从"找到的头文件路径"自动推 SDK 根，补上环境变量。
+
+std::string normalise_serial(const unsigned char * raw, std::size_t max_len)
+{//把厂商 SDK 的定长 unsigned char 数组转成 std::string，正确处理没有终止符的情况
+  std::size_t len = 0;
+  while (len < max_len && raw[len] != 0) {++len;}//手动找 \0
+  return std::string(reinterpret_cast<const char *>(raw), len);
+}
+
+std::string lower_copy(std::string value)
+{
+  std::transform(value.begin(), value.end(), value.begin(),
+    [](unsigned char c) {return static_cast<char>(std::tolower(c));});
+  return value;
+}
+
+bool is_gige_device(const MV_CC_DEVICE_INFO * info)
+{
+  return info != nullptr && (info->nTLayerType & MV_GIGE_DEVICE) != 0;
+}
+
+bool is_usb_device(const MV_CC_DEVICE_INFO * info)
+{
+  return info != nullptr && (info->nTLayerType & MV_USB_DEVICE) != 0;
+}
+
+std::string device_serial(const MV_CC_DEVICE_INFO * info)
+{
+  if (is_gige_device(info)) {
+    return normalise_serial(info->SpecialInfo.stGigEInfo.chSerialNumber, 16);
+  }
+  if (is_usb_device(info)) {
+    return normalise_serial(info->SpecialInfo.stUsb3VInfo.chSerialNumber, 64);
+  }
+  return {};
+}
+
+bool is_bayer_pixel_type(unsigned int pixel_type)
+{
+  switch (pixel_type) {
+    case PixelType_Gvsp_BayerGR8:
+    case PixelType_Gvsp_BayerRG8:
+    case PixelType_Gvsp_BayerGB8:
+    case PixelType_Gvsp_BayerBG8:
+    case PixelType_Gvsp_BayerRBGG8:
+    case PixelType_Gvsp_BayerBRGG8:
+    case PixelType_Gvsp_BayerGR10:
+    case PixelType_Gvsp_BayerRG10:
+    case PixelType_Gvsp_BayerGB10:
+    case PixelType_Gvsp_BayerBG10:
+    case PixelType_Gvsp_BayerGR12:
+    case PixelType_Gvsp_BayerRG12:
+    case PixelType_Gvsp_BayerGB12:
+    case PixelType_Gvsp_BayerBG12:
+    case PixelType_Gvsp_BayerGR10_Packed:
+    case PixelType_Gvsp_BayerRG10_Packed:
+    case PixelType_Gvsp_BayerGB10_Packed:
+    case PixelType_Gvsp_BayerBG10_Packed:
+    case PixelType_Gvsp_BayerGR12_Packed:
+    case PixelType_Gvsp_BayerRG12_Packed:
+    case PixelType_Gvsp_BayerGB12_Packed:
+    case PixelType_Gvsp_BayerBG12_Packed:
+    case PixelType_Gvsp_BayerGR16:
+    case PixelType_Gvsp_BayerRG16:
+    case PixelType_Gvsp_BayerGB16:
+    case PixelType_Gvsp_BayerBG16:
+      return true;
+    default:
+      return false;
+  }
+}
+}  // namespace
+#endif  // HIKROBOT_MVS_AVAILABLE
+
+void finalize_mvs_sdk()//外部可调用的清理入口
+{
+#ifdef HIKROBOT_MVS_AVAILABLE
+  std::lock_guard<std::mutex> lock(g_api_mutex);
+  finalize_mvs_sdk_locked();
+#endif
+}
+
+MvsBackend::MvsBackend(MvsBackendOptions options)//构造函数
+: options_(std::move(options))
+{
+}
+
+MvsBackend::~MvsBackend()
+{
+  // open() may fail after CreateHandle/OpenDevice; the backend object is then
+  // destroyed by the node without an explicit close(). Release any partial
+  // state here so a retry cannot leak device handles.
+  close();
+}
+
+const MvsSdkProbe & MvsBackend::probe() const// 懒加载探测结果 用到才做，做完缓存
+{//返回 SDK 探测结果。第一次调用时扫描并缓存，后续调用直接返回缓存（引用，不拷贝）
+  if (!probe_.has_value()) {probe_ = probe_sdk(options_.sdk_lib_candidates);}
+  return *probe_;
+}
+
+std::string MvsBackend::describe() const
+{
+  const auto & report = probe();
+  std::ostringstream os;
+  os << "backend=mvs transport=" << options_.transport << " requires_hardware=true implemented=";
+#ifdef HIKROBOT_MVS_AVAILABLE
+  os << "true";
+#else
+  os << "false";
+#endif
+  os << " sdk_library_found=" << (report.library_found() ? "true" : "false")
+     << " sdk_headers_found=" << (report.headers_found() ? "true" : "false");
+  if (!sdk_version_.empty()) {os << " sdk_version=" << sdk_version_;}
+  if (!device_summary_.empty()) {os << " " << device_summary_;}
+  return os.str();
+}
+
+void MvsBackend::open()//打开相机
+{
+  if (handle_ != nullptr) {close();}//handle_：保存 SDK 设备句柄的成员变量
+  const std::string transport = lower_copy(options_.transport);
+  if (transport != "auto" && transport != "gige" && transport != "usb") {
+    throw BackendUnavailableError(
+            "invalid mvs_transport='" + options_.transport +
+            "'; expected auto, gige or usb");
+  }
+  const auto & report = probe();//probe() 负责检查 MVS SDK 的相关信息，例如 SDK 动态库和头文件是否存在
+  if (!report.library_found()) {//library_found()：检查是否找到 SDK 动态库
+    throw BackendUnavailableError(
+            std::string("Hikrobot MVS SDK not found. Cannot open a Hikrobot camera.\n") +
+            report.summary() +
+            "\nACTION: install the *Linux* MVS SDK (x86_64) and re-run.");
+  }
+  if (!report.headers_found()) {
+    throw BackendUnavailableError(
+            std::string("MVS shared library found but MvCameraControl.h is missing, so the "
+                        "wrapper cannot work against the real API.\n") + report.summary());
+  }
+
+#ifdef HIKROBOT_MVS_AVAILABLE
+  // The transport-layer plugins (.cti) are located through these variables.
+  // Only set them when the user has not, so an explicit configuration wins.
+  const std::string sdk_root = infer_sdk_root(report.header_paths.front());
+  set_env_if_unset("MVCAM_SDK_PATH", sdk_root);
+  set_env_if_unset("MVCAM_COMMON_RUNENV", sdk_root + "/lib");
+  set_env_if_unset("MVCAM_SOFTWARE_LIBENV", sdk_root + "/lib");
+  set_env_if_unset("MVCAM_GENICAM_CLPROTOCOL", sdk_root + "/lib/CLProtocol");
+
+  std::string load_error;
+  MvsApi * api = ensure_api(options_.sdk_lib_candidates, load_error);
+  if (api == nullptr) {
+    throw BackendUnavailableError("failed to load libMvCameraControl: " + load_error);
+  }
+  const unsigned int sdk_version = api->get_sdk_version();
+  std::ostringstream version;
+  version << ((sdk_version >> 24) & 0xFFU) << "." << ((sdk_version >> 16) & 0xFFU)
+          << "." << ((sdk_version >> 8) & 0xFFU) << "." << (sdk_version & 0xFFU);
+  sdk_version_ = version.str();
+
+  MV_CC_DEVICE_INFO_LIST devices{};
+  int rc = api->enum_devices(MV_GIGE_DEVICE | MV_USB_DEVICE, &devices);//enum_devices() 对应海康 MVS SDK 的设备枚举操作
+  if (rc != MV_OK) {
+    throw std::runtime_error("MV_CC_EnumDevices failed: " + mvs_error_text(rc));
+  }
+  // Record what the enumeration actually returned: model, serial and IP are
+  // exactly what a human needs in order to fix the network configuration.
+  {
+    std::ostringstream devs;
+    devs << "devices=" << devices.nDeviceNum;
+    for (unsigned int i = 0; i < devices.nDeviceNum; ++i) {
+      const MV_CC_DEVICE_INFO * info = devices.pDeviceInfo[i];
+      if (info == nullptr) {continue;}
+      if (is_gige_device(info)) {
+        const auto & gige = info->SpecialInfo.stGigEInfo;
+        devs << " [GigE model='" << normalise_serial(gige.chModelName, 32)
+             << "' serial='" << normalise_serial(gige.chSerialNumber, 16)
+             << "' ip=" << format_ip(gige.nCurrentIp)
+             << " mask=" << format_ip(gige.nCurrentSubNetMask) << "]";
+      } else if (is_usb_device(info)) {
+        const auto & usb = info->SpecialInfo.stUsb3VInfo;
+        devs << " [USB3 model='" << normalise_serial(usb.chModelName, 64)
+             << "' serial='" << normalise_serial(usb.chSerialNumber, 64)
+             << "' vid=0x" << std::hex << usb.idVendor
+             << " pid=0x" << usb.idProduct << std::dec << "]";
+      }
+    }
+    device_summary_ = devs.str();
+  }
+
+  if (devices.nDeviceNum == 0) {
+    throw BackendUnavailableError(
+            std::string("no Hikvision camera found by the MVS SDK (") +
+            device_summary_ + ", sdk_version=" + sdk_version_ + ", transport=" +
+            transport + "). Checklist:\n"
+            "  1. camera powered? (LED on)\n"
+            "  2. GigE: camera cable and host/VM bridge ready?\n"
+            "  3. USB3: camera USB interface passed through to this VM?\n"
+            "  4. are camera and host on the same L2 segment for GigE discovery?");
+  }
+
+  const MV_CC_DEVICE_INFO * chosen = nullptr;
+  std::vector<const MV_CC_DEVICE_INFO *> matching;
+  for (unsigned int i = 0; i < devices.nDeviceNum; ++i) {
+    const MV_CC_DEVICE_INFO * info = devices.pDeviceInfo[i];
+    const bool gige = is_gige_device(info);
+    const bool usb = is_usb_device(info);
+    if (!gige && !usb) {continue;}
+    if (transport == "gige" && !gige) {continue;}
+    if (transport == "usb" && !usb) {continue;}
+    if (!options_.serial_number.empty() && device_serial(info) != options_.serial_number) {continue;}
+    matching.push_back(info);
+  }
+  if (matching.empty()) {
+    throw BackendUnavailableError(
+            "no MVS camera matched transport='" + transport + "'" +
+            (options_.serial_number.empty() ? "" : " serial='" + options_.serial_number + "'") +
+            " (" + device_summary_ + ")");
+  }
+  if (matching.size() != 1U) {
+    throw BackendUnavailableError(
+            "single-camera mode found multiple matching devices (" + device_summary_ +
+            "). Set mvs_serial_number to select one.");
+  }
+  chosen = matching.front();
+
+  rc = api->create_handle(&handle_, chosen);
+  if (rc != MV_OK) {throw std::runtime_error("MV_CC_CreateHandle failed: " + mvs_error_text(rc));}
+  rc = api->open_device(handle_, MV_ACCESS_Exclusive, 0);
+  if (rc != MV_OK) {
+    throw std::runtime_error(
+            "MV_CC_OpenDevice failed: " + mvs_error_text(rc) +
+            " (is another application, e.g. the MVS client, holding the camera?)");
+  }
+
+  // --- optional settings. A rejection is reported, not silently ignored -----
+  auto warn_if = [](int code, const char * what) {
+      if (code != MV_OK) {
+        std::ostringstream os;
+        os << "MVS setting ignored: " << what << " -> " << mvs_error_text(code);
+        throw std::runtime_error(os.str());
+      }
+    };
+
+//设置图像像素格式
+  if (!options_.pixel_format.empty()) {
+    // MV_CC_SetEnumValue takes the numeric enum value, so the PixelType.h
+    // constants are used directly instead of a string lookup.
+    if (options_.pixel_format == "Mono8") {//读取之前保存的像素格式配置
+      warn_if(api->set_enum_value(handle_, "PixelFormat", PixelType_Gvsp_Mono8), "PixelFormat=Mono8");
+    } else if (options_.pixel_format == "BGR8") {
+      warn_if(api->set_enum_value(handle_, "PixelFormat", PixelType_Gvsp_BGR8_Packed), "PixelFormat=BGR8");
+    } else if (options_.pixel_format == "RGB8") {
+      warn_if(api->set_enum_value(handle_, "PixelFormat", PixelType_Gvsp_RGB8_Packed), "PixelFormat=RGB8");
+    } else if (options_.pixel_format == "BayerRG8") {
+      warn_if(api->set_enum_value(handle_, "PixelFormat", PixelType_Gvsp_BayerRG8), "PixelFormat=BayerRG8");
+    } else if (options_.pixel_format == "BayerBG8") {
+      warn_if(api->set_enum_value(handle_, "PixelFormat", PixelType_Gvsp_BayerBG8), "PixelFormat=BayerBG8");
+    } else if (options_.pixel_format == "BayerGB8") {
+      warn_if(api->set_enum_value(handle_, "PixelFormat", PixelType_Gvsp_BayerGB8), "PixelFormat=BayerGB8");
+    } else if (options_.pixel_format == "BayerGR8") {
+      warn_if(api->set_enum_value(handle_, "PixelFormat", PixelType_Gvsp_BayerGR8), "PixelFormat=BayerGR8");
+    } else {
+      throw std::runtime_error(
+              "unsupported mvs_pixel_format '" + options_.pixel_format +
+              "'; supported: Mono8, BGR8, RGB8, BayerRG8, BayerBG8, BayerGB8, BayerGR8");
+    }
+  }
+//设置图像宽度和高度
+  if (options_.width > 0) {
+    warn_if(api->set_int_value_ex(handle_, "Width", options_.width), "Width");
+  }
+  if (options_.height > 0) {
+    warn_if(api->set_int_value_ex(handle_, "Height", options_.height), "Height");
+  }
+  if (options_.exposure_us > 0.0) {//相机曝光
+    warn_if(
+      api->set_enum_value(handle_, "ExposureAuto", 0), "ExposureAuto=Off");
+    warn_if(
+      api->set_float_value(
+        handle_, "ExposureTime", static_cast<float>(options_.exposure_us)),
+      "ExposureTime");
+  }
+  if (options_.gain > 0.0) {//增益
+    warn_if(api->set_enum_value(handle_, "GainAuto", 0), "GainAuto=Off");
+    warn_if(
+      api->set_float_value(handle_, "Gain", static_cast<float>(options_.gain)), "Gain");
+  }
+
+  // GigE: enlarge the packet size to reduce per-packet overhead / loss.
+  if ((chosen->nTLayerType & MV_GIGE_DEVICE) != 0) {
+    int packet = options_.packet_size;//packet 是网口传输参数
+    if (packet <= 0) {packet = api->get_optimal_packet_size(handle_);}
+    if (packet > 0) {
+      (void)api->set_int_value_ex(handle_, "GevSCPSPacketSize", packet);
+    }
+  }
+
+//申请图像缓冲区
+  MVCC_INTVALUE_EX payload{};
+  rc = api->get_int_value_ex(handle_, "PayloadSize", &payload);
+  if (rc != MV_OK || payload.nCurValue <= 0) {
+    throw std::runtime_error("could not read PayloadSize: " + mvs_error_text(rc));
+  }
+  buffer_.assign(static_cast<std::size_t>(payload.nCurValue), 0);
+
+  rc = api->start_grabbing(handle_);//启动采集
+  if (rc != MV_OK) {throw std::runtime_error("MV_CC_StartGrabbing failed: " + mvs_error_text(rc));}
+  return;
+#else
+  throw std::logic_error(
+          "The MVS SDK is installed, but this build was compiled WITHOUT its headers, so the "
+          "acquisition path is not available. Rebuild with -DHIKROBOT_MVS_INCLUDE_DIR pointing "
+          "at the SDK's include directory (default /opt/MVS/include).");
+#endif
+}
+
+void MvsBackend::close()
+{
+#ifdef HIKROBOT_MVS_AVAILABLE
+  if (handle_ != nullptr) {
+    std::string err;
+    MvsApi * api = ensure_api(options_.sdk_lib_candidates, err);
+    if (api != nullptr) {
+      (void)api->stop_grabbing(handle_);
+      (void)api->close_device(handle_);
+      (void)api->destroy_handle(handle_);
+    }
+  }
+#endif
+  handle_ = nullptr;
+  buffer_.clear();
+}
+
+std::optional<Frame> MvsBackend::grab(double timeout_s)
+{
+#ifdef HIKROBOT_MVS_AVAILABLE
+  std::string err;
+  MvsApi * api = ensure_api(options_.sdk_lib_candidates, err);
+  if (api == nullptr || handle_ == nullptr) {
+    throw std::runtime_error("MVS backend used before open()");
+  }
+  if (buffer_.empty()) {throw std::runtime_error("MVS backend: no payload buffer");}
+
+  MV_FRAME_OUT_INFO_EX info{};
+  const unsigned int timeout_ms =
+    static_cast<unsigned int>(std::max(1.0, timeout_s * 1000.0));
+  const int rc = api->get_one_frame_timeout(
+    handle_, buffer_.data(), static_cast<unsigned int>(buffer_.size()), &info, timeout_ms);
+  if (static_cast<unsigned int>(rc) == MV_E_NODATA) {return std::nullopt;}  // timeout: no frame
+  if (rc != MV_OK) {
+    throw std::runtime_error("MV_CC_GetOneFrameTimeout failed: " + mvs_error_text(rc));
+  }
+
+  Frame frame;
+  frame.width = static_cast<int>(info.nWidth);
+  frame.height = static_cast<int>(info.nHeight);
+  frame.sequence = info.nFrameNum;
+
+  // nHostTimeStamp is a host-clock value. Sanity-check that it looks like a
+  // nanosecond epoch (2026 is ~1.79e18 ns); otherwise fall back to our own clock
+  // rather than publishing a nonsense stamp.
+  frame.stamp_ns = (info.nHostTimeStamp > 1000000000000000000LL) ?
+    info.nHostTimeStamp : now_ns();
+
+  // The device timestamp's epoch is not documented, so it is deliberately left
+  // empty instead of being published as if it were a wall-clock time.
+  frame.hardware_stamp_ns = std::nullopt;
+
+  if (info.nFrameLen == 0U) {
+    throw std::runtime_error("MVS returned a frame with nFrameLen=0");
+  }
+  if (info.nFrameLen > buffer_.size()) {
+    throw std::runtime_error(
+            "MVS returned nFrameLen=" + std::to_string(info.nFrameLen) +
+            " but the payload buffer is only " + std::to_string(buffer_.size()) + " bytes");
+  }
+
+  if (info.enPixelType == PixelType_Gvsp_Mono8) {
+    const std::size_t expected = checked_image_bytes(frame.width, frame.height, 1U);
+    if (info.nFrameLen < expected) {
+      throw std::runtime_error(
+              "Mono8 frame is shorter than width*height: nFrameLen=" +
+              std::to_string(info.nFrameLen) + " expected>=" + std::to_string(expected));
+    }
+    frame.encoding = "mono8";
+    frame.data.assign(buffer_.begin(), buffer_.begin() + static_cast<std::ptrdiff_t>(expected));
+  } else if (info.enPixelType == PixelType_Gvsp_BGR8_Packed ||
+    info.enPixelType == PixelType_Gvsp_RGB8_Packed)
+  {
+    const std::size_t expected = checked_image_bytes(frame.width, frame.height, 3U);
+    if (info.nFrameLen < expected) {
+      throw std::runtime_error(
+              "packed color frame is shorter than width*height*3: nFrameLen=" +
+              std::to_string(info.nFrameLen) + " expected>=" + std::to_string(expected));
+    }
+    frame.encoding =
+      info.enPixelType == PixelType_Gvsp_BGR8_Packed ? "bgr8" : "rgb8";
+    frame.data.assign(buffer_.begin(), buffer_.begin() + static_cast<std::ptrdiff_t>(expected));
+  } else {
+    // Non-direct formats (Bayer, YUV, packed mono...) are converted using the
+    // dimensions reported for this exact frame, never hard-coded dimensions.
+    const bool is_color =
+      is_bayer_pixel_type(static_cast<unsigned int>(info.enPixelType));
+    const std::size_t dst_size =
+      checked_image_bytes(frame.width, frame.height, is_color ? 3U : 1U);
+    std::vector<uint8_t> converted(dst_size);
+    MV_CC_PIXEL_CONVERT_PARAM_EX cvt{};
+    cvt.nWidth = static_cast<unsigned int>(frame.width);
+    cvt.nHeight = static_cast<unsigned int>(frame.height);
+    cvt.enSrcPixelType = info.enPixelType;
+    cvt.pSrcData = buffer_.data();
+    cvt.nSrcDataLen = info.nFrameLen;
+    cvt.enDstPixelType =
+      is_color ? PixelType_Gvsp_BGR8_Packed : PixelType_Gvsp_Mono8;
+    cvt.pDstBuffer = converted.data();
+    cvt.nDstBufferSize = static_cast<unsigned int>(converted.size());
+    const int crc = api->convert_pixel_type(handle_, &cvt);
+    if (crc != MV_OK) {
+      throw std::runtime_error("MV_CC_ConvertPixelTypeEx failed: " + mvs_error_text(crc));
+    }
+    if (cvt.nDstLen != dst_size) {
+      throw std::runtime_error(
+              "MV_CC_ConvertPixelTypeEx returned nDstLen=" +
+              std::to_string(cvt.nDstLen) + " expected=" + std::to_string(dst_size));
+    }
+    frame.encoding = is_color ? "bgr8" : "mono8";
+    frame.data = std::move(converted);
+  }
+
+  if (!frame.is_well_formed()) {
+    std::ostringstream os;
+    os << "MVS produced a malformed frame: " << frame.width << "x" << frame.height << " "
+       << frame.encoding << " data=" << frame.data.size()
+       << " expected=" << frame.expected_size();
+    throw std::runtime_error(os.str());
+  }
+  return frame;
+#else
+  (void)timeout_s;
+  open();  // throws with the "built without headers" explanation
+  return std::nullopt;
+#endif
+}
+
+}  // namespace camera_driver

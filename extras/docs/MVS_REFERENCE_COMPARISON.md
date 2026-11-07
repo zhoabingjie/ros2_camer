@@ -10,10 +10,10 @@
 
 | 本项目 | 参考项目 | 作用 |
 |---|---|---|
-| `src/hikrobot_camera_ros2/src/mvs_backend.cpp` | `src/hik_camera.cpp` | MVS 设备、取流和图像转换 |
-| `src/hikrobot_camera_ros2/src/camera_node.cpp` | `src/hik_camera.cpp` | ROS 2 图像与 CameraInfo 发布 |
-| `src/hikrobot_camera_ros2/include/hikrobot_camera_ros2/mvs_backend.hpp` | `include/hik_camera/hik_camera.hpp` | 后端接口 |
-| `src/hikrobot_camera_ros2/CMakeLists.txt` | `CMakeLists.txt` | SDK 路径和构建依赖 |
+| `src/camera_driver/src/mvs_backend.cpp` | `src/hik_camera.cpp` | MVS 设备、取流和图像转换 |
+| `src/camera_driver/src/camera_node.cpp` | `src/hik_camera.cpp` | ROS 2 图像与 CameraInfo 发布 |
+| `src/camera_driver/include/camera_driver/mvs_backend.hpp` | `include/hik_camera/hik_camera.hpp` | 后端接口 |
+| `src/camera_driver/CMakeLists.txt` | `CMakeLists.txt` | SDK 路径和构建依赖 |
 
 ## 2. 功能对比
 
@@ -107,7 +107,7 @@
 真实相机连接后必须重新执行：
 
 ```bash
-ros2 launch hikrobot_camera_ros2 camera.launch.py mvs_transport:=auto
+ros2 launch camera_driver camera.launch.py mvs_transport:=auto
 ros2 topic hz /camera/image_raw
 ros2 topic echo --once /camera/camera_info
 ```

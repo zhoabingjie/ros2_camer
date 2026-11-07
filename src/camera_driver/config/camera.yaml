@@ -1,0 +1,34 @@
+# Hikrobot MVS single-camera adapter (GigE or USB3 Vision).
+/camera_node:
+  ros__parameters:
+    frame_id: camera_optical_frame
+
+    image_topic: /camera/image_raw
+    camera_info_topic: /camera/camera_info
+    status_topic: /vision/status
+
+    # Empty means "uncalibrated": all-zero K/P CameraInfo. Point this at a
+    # camera_calibration YAML whose image_width/image_height match the live stream.
+    calibration_file: ""
+
+    stream_timeout_s: 2.0
+    grab_timeout_s: 0.2
+    reconnect_backoff_s: 1.0
+    status_period_s: 1.0
+
+    # The formal camera entry must fail instead of running without an image source.
+    require_camera_at_startup: true
+
+    qos_reliability: best_effort
+    qos_depth: 5
+
+    # --- real MVS camera: auto, gige, usb ---
+    sdk_lib_candidates: [""]
+    mvs_transport: auto
+    mvs_serial_number: ""
+    mvs_pixel_format: ""
+    mvs_width: 0
+    mvs_height: 0
+    mvs_exposure_us: 0.0
+    mvs_gain: 0.0
+    mvs_packet_size: 0

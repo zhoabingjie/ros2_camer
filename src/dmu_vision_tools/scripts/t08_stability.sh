@@ -19,7 +19,7 @@ export ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-95}"
 mkdir -p "$WS/artifacts"
 
 pkill -f "ros2 launch dmu_vision_bringup vision.launch.py" 2>/dev/null
-pkill -f "hikrobot_camera_ros2/lib/hikrobot_camera_ros2/camera_node" 2>/dev/null
+pkill -f "camera_driver/lib/camera_driver/camera_node" 2>/dev/null
 pkill -f "yolo_ros/lib/yolo_ros/yolo_node" 2>/dev/null
 pkill -f "visual_obstacle_avoidance/lib/visual_obstacle_avoidance/visual_obstacle_node" 2>/dev/null
 sleep 2
@@ -119,6 +119,6 @@ echo "error_lines=$(grep -cE 'ERROR|died' /tmp/t08_pipeline.log 2>/dev/null || e
 grep -E "ERROR|died" /tmp/t08_pipeline.log 2>/dev/null | head -5 | tee -a "$OUT"
 
 pkill -f "ros2 launch dmu_vision_bringup vision.launch.py" 2>/dev/null
-pkill -f "hikrobot_camera_ros2/lib/hikrobot_camera_ros2/camera_node" 2>/dev/null
+pkill -f "camera_driver/lib/camera_driver/camera_node" 2>/dev/null
 pkill -f "yolo_ros/lib/yolo_ros/yolo_node" 2>/dev/null
 echo "T08_DONE log=$OUT" | tee -a "$OUT"

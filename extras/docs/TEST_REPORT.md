@@ -49,7 +49,7 @@ TEST_RC=0
 以下命令均能正常解析参数：
 
 ```bash
-ros2 launch hikrobot_camera_ros2 camera.launch.py --show-args
+ros2 launch camera_driver camera.launch.py --show-args
 ros2 launch dmu_vision_bringup vision.launch.py --show-args
 ros2 launch dmu_vision_bringup preview.launch.py --show-args
 ros2 launch dmu_vision_bringup calibration.launch.py --show-args
@@ -62,7 +62,7 @@ ros2 launch dmu_vision_bringup calibration.launch.py --show-args
 显式 USB 启动：
 
 ```bash
-ros2 launch hikrobot_camera_ros2 camera.launch.py \
+ros2 launch camera_driver camera.launch.py \
   mvs_transport:=usb mvs_exposure_us:=5000.0 mvs_gain:=1.5
 ```
 
@@ -104,13 +104,13 @@ CAMERA_RC=1
 ### 构建
 
 ```bash
-colcon build --symlink-install --packages-select hikrobot_camera_ros2 --cmake-clean-cache
+colcon build --symlink-install --packages-select camera_driver --cmake-clean-cache
 ```
 
 结果：
 
 ```text
-Finished <<< hikrobot_camera_ros2
+Finished <<< camera_driver
 BUILD_RC=0
 HIKROBOT_MVS_INCLUDE_DIR=/opt/MVS/include
 CXX_DEFINES: -DHIKROBOT_MVS_AVAILABLE
@@ -119,7 +119,7 @@ CXX_DEFINES: -DHIKROBOT_MVS_AVAILABLE
 ### 相机包测试
 
 ```bash
-colcon test --packages-select hikrobot_camera_ros2 --parallel-workers 1
+colcon test --packages-select camera_driver --parallel-workers 1
 colcon test-result --verbose
 ```
 
@@ -133,7 +133,7 @@ TEST_RC=0 RESULT_RC=0
 ### 无相机启动
 
 ```bash
-ros2 run hikrobot_camera_ros2 camera_node --ros-args -p backend:=mvs
+ros2 run camera_driver camera_node --ros-args -p backend:=mvs
 ```
 
 结果：
@@ -264,7 +264,7 @@ obstacles:
 ### MVS 缺失启动行为
 
 ```bash
-ros2 run hikrobot_camera_ros2 camera_node --ros-args -p backend:=mvs
+ros2 run camera_driver camera_node --ros-args -p backend:=mvs
 ```
 
 实测：
@@ -303,15 +303,15 @@ Ubuntu 24.04.4 LTS / ROS 2 Jazzy / x86_64 / 2 vCPU / 3.8 GiB RAM。
 ```bash
 cd ~/vision_ws
 source /opt/ros/jazzy/setup.bash
-colcon build --packages-select hikrobot_camera_ros2 --event-handlers console_direct+
-colcon test  --packages-select hikrobot_camera_ros2 --event-handlers console_direct+
+colcon build --packages-select camera_driver --event-handlers console_direct+
+colcon test  --packages-select camera_driver --event-handlers console_direct+
 colcon test-result --all
 ```
 
 ### 3. 构建结果
 
 ```
-Finished <<< hikrobot_camera_ros2 [25.2s]
+Finished <<< camera_driver [25.2s]
 Summary: 1 package finished [25.4s]
 ```
 
@@ -347,14 +347,14 @@ C++ 版首次构建即暴露了 7 个问题，全部为真实缺陷或真实的�
 | 1 | **`get_parameter(...).as_string_array()` 被 range-for 直接遍历** —— 该函数返回临时 `rclcpp::Parameter` 内部的引用，GCC `-Wdangling-reference` 报警 | **真实潜在 UB** | 先拷贝到具名局部变量再遍历 |
 | 2 | 嵌套结构体 `Options` 的默认成员初始化器被用作外层类成员函数的默认实参 | 违反 ISO C++ 规则 | 把 `MockBackendOptions` 提到命名空间作用域 |
 | 3 | `CalibrationMismatchError` 从 `std::runtime_error` 继承构造函数，但其直接基类是 `CalibrationError` | 编译错误 | 改为 `using CalibrationError::CalibrationError;` |
-| 4 | 成员函数 `load_calibration` 遮蔽同名自由函数，且调用了不存在的 helper | 编译错误 | 显式限定 `::hikrobot_camera_ros2::load_calibration`，补 `format_double` |
+| 4 | 成员函数 `load_calibration` 遮蔽同名自由函数，且调用了不存在的 helper | 编译错误 | 显式限定 `::camera_driver::load_calibration`，补 `format_double` |
 | 5 | 缺 `<cctype>`（`std::tolower`） | 编译错误 | 补 include |
 | 6 | 测试缺 `using ... MockBackendOptions;` | 编译错误 | 补 using 声明 |
 | 7 | colcon 报 "Duplicate package names" —— 归档的 Python 旧版与新版同名 | 构建配置问题 | 归档目录加 `COLCON_IGNORE` |
 
 ### 6. 运行时验证（真实执行，非推测）
 
-`ros2 launch hikrobot_camera_ros2 camera.launch.py`（mock 后端）：
+`ros2 launch camera_driver camera.launch.py`（mock 后端）：
 
 ```
 $ ros2 topic list | grep -E "camera|vision"
@@ -891,7 +891,7 @@ error_lines=0
 
 ```
 -- Hikrobot MVS SDK headers found: /opt/MVS/include -> real camera support ON
-Finished <<< hikrobot_camera_ros2 [15.5s]
+Finished <<< camera_driver [15.5s]
 Summary: 58 tests, 0 errors, 0 failures, 1 skipped
 ```
 

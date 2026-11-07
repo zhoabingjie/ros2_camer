@@ -1,12 +1,12 @@
 # 接口与命名迁移说明
 
-本次改造优先保护现有代码和命令，没有进行破坏性包重命名。
+相机驱动整理为 `camera_driver`，旧包 `hikrobot_camera_ros2` 保留，不删除。
 
 ## 1. Package 映射
 
 | 旧 Package | 新 Package | 处理 |
 |---|---|---|
-| `hikrobot_camera_ros2` | `hikrobot_camera_ros2` | 保持不变 |
+| `hikrobot_camera_ros2` | `camera_driver` | 新包用于正式 bringup；旧包保留 |
 | `dmu_vision_bringup` | `dmu_vision_bringup` | 保持不变 |
 | `dmu_vision_tools` | `dmu_vision_tools` | 保持不变 |
 | `yolo_ros` | `yolo_ros` | 上游保持不变 |

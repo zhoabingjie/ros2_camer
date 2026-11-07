@@ -14,7 +14,7 @@
     {
       "label": "colcon: build (camera package)",
       "type": "shell",
-      "command": "bash -lc 'source /opt/ros/jazzy/setup.bash && cd ${workspaceFolder} && colcon build --symlink-install --packages-select hikrobot_camera_ros2'",
+      "command": "bash -lc 'source /opt/ros/jazzy/setup.bash && cd ${workspaceFolder} && colcon build --symlink-install --packages-select camera_driver'",
       "problemMatcher": []
     },
     {
@@ -37,7 +37,7 @@
     {
       "label": "run: camera only (real MVS)",
       "type": "shell",
-      "command": "bash -lc 'source /opt/ros/jazzy/setup.bash && cd ${workspaceFolder} && source install/setup.bash && ros2 launch hikrobot_camera_ros2 camera.launch.py'",
+      "command": "bash -lc 'source /opt/ros/jazzy/setup.bash && cd ${workspaceFolder} && source install/setup.bash && ros2 launch camera_driver camera.launch.py'",
       "isBackground": true,
       "problemMatcher": []
     },

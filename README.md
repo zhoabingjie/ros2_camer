@@ -59,19 +59,19 @@ cd ~/vision_ws
 source /opt/ros/jazzy/setup.bash
 source install/setup.bash
 
-ros2 launch hikrobot_camera_ros2 camera.launch.py
+ros2 launch camera_driver camera.launch.py
 ```
 
 USB 相机：
 
 ```bash
-ros2 launch hikrobot_camera_ros2 camera.launch.py mvs_transport:=usb
+ros2 launch camera_driver camera.launch.py mvs_transport:=usb
 ```
 
 设置曝光（单位：微秒）：
 
 ```bash
-ros2 launch hikrobot_camera_ros2 camera.launch.py \
+ros2 launch camera_driver camera.launch.py \
   mvs_transport:=usb mvs_exposure_us:=5000.0
 ```
 
@@ -135,7 +135,8 @@ ros2 run dmu_vision_tools vision_health_check --measure 5
 
 | 包 | 作用 |
 |---|---|
-| `hikrobot_camera_ros2` | 海康 GigE / USB3 Vision 真实相机驱动、Image/CameraInfo/诊断发布 |
+| `camera_driver` | 海康 GigE / USB3 Vision 真实相机驱动、Image/CameraInfo/诊断发布 |
+| `hikrobot_camera_ros2` | 旧版相机驱动包，保留用于兼容/对照；正式启动使用 `camera_driver` |
 | `dmu_vision_bringup` | 正式统一启动、预览、标定和参数编排 |
 | `dmu_vision_interfaces` | 团队稳定消息接口 |
 | `visual_obstacle_avoidance` | 单目二维障碍物筛选和状态输出 |

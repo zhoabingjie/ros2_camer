@@ -155,7 +155,7 @@ vision_ws/
 └── src/
     ├── yolo_ros/                       # 上游代码副本/子模块，尽量不改
     ├── image_pipeline/                 # 默认不编译 Rolling 全部源码
-    ├── hikrobot_camera_ros2/            # 本项目相机驱动适配包（按审计决定实现/复用）
+    ├── camera_driver/            # 本项目相机驱动适配包（按审计决定实现/复用）
     ├── dmu_vision_interfaces/            # 本项目稳定消息接口
     ├── dmu_vision_bringup/               # launch、参数、RViz、文档入口
     ├── dmu_vision_tools/                 # 诊断、检查、可选录包工具
@@ -163,14 +163,14 @@ vision_ws/
     └── dmu_visual_odometry/              # 仅在选定并验证具体 VO/SLAM 后加入
 ```
 
-如果团队仓库已有命名规则，优先遵守现有规则，避免重复创建同类包。`hikrobot_camera_ros2`
+如果团队仓库已有命名规则，优先遵守现有规则，避免重复创建同类包。`camera_driver`
 不应在未核实 SDK API
 前假装已完成：先做驱动接口调查和最小采集验证，再决定复用驱动或实现 SDK
 wrapper。
 
 ### 包职责
 
--   `hikrobot_camera_ros2`：相机枚举、打开/关闭、采集线程、图像格式转换、时间戳、CameraInfo
+-   `camera_driver`：相机枚举、打开/关闭、采集线程、图像格式转换、时间戳、CameraInfo
     发布、错误恢复、相机参数配置。
 -   `dmu_vision_interfaces`：团队稳定使用的消息接口。
 -   `dmu_vision_bringup`：一键启动、YAML、launch 参数、可选组件编排。
