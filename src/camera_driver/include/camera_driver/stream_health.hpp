@@ -55,6 +55,7 @@ public:
   void on_missed();
   void on_error(const std::string & message);
   void on_reopen();
+  void set_stall_timeout_s(double timeout_s);
 
   StreamState state(std::optional<double> now = std::nullopt) const;
   HealthSnapshot snapshot(std::optional<double> now = std::nullopt) const;
@@ -63,7 +64,7 @@ public:
   /// @brief Whether publishing is allowed right now, plus the reason state.
   bool should_publish(std::optional<double> now, StreamState * state_out = nullptr) const;
 
-  double stall_timeout_s() const {return stall_timeout_s_;}
+  double stall_timeout_s() const;
 
 private:
   double now_or(std::optional<double> now) const;

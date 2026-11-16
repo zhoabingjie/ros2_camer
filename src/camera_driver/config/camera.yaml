@@ -1,4 +1,5 @@
-# Hikrobot MVS single-camera adapter (GigE or USB3 Vision).
+# 海康 USB3 Vision 单相机配置。
+# 使用真实硬件序列号固定绑定相机，USB 重新枚举后仍选择同一台设备。
 /camera_node:
   ros__parameters:
     frame_id: camera_optical_frame
@@ -7,28 +8,35 @@
     camera_info_topic: /camera/camera_info
     status_topic: /vision/status
 
-    # Empty means "uncalibrated": all-zero K/P CameraInfo. Point this at a
-    # camera_calibration YAML whose image_width/image_height match the live stream.
-    calibration_file: ""
-
     stream_timeout_s: 2.0
     grab_timeout_s: 0.2
     reconnect_backoff_s: 1.0
     status_period_s: 1.0
 
-    # The formal camera entry must fail instead of running without an image source.
-    require_camera_at_startup: true
+    # 相机未插入时节点仍可启动并等待设备，但不会产生任何模拟图像。
+    require_camera_at_startup: false
+    # 连续超时达到该次数后释放旧句柄并重新枚举，覆盖 USB 拔插后只报超时的情况。
+    reconnect_after_misses: 10
 
-    qos_reliability: best_effort
+    qos_reliability: reliable
     qos_depth: 5
 
-    # --- real MVS camera: auto, gige, usb ---
+    # auto 自动匹配 GigE/USB3 Vision；USB 相机也可显式设为 usb。
     sdk_lib_candidates: [""]
     mvs_transport: auto
-    mvs_serial_number: ""
+    mvs_serial_number: "DB0883068"
     mvs_pixel_format: ""
     mvs_width: 0
     mvs_height: 0
-    mvs_exposure_us: 0.0
-    mvs_gain: 0.0
     mvs_packet_size: 0
+
+    # auto: 彩色相机优先 bgr8，只有 Mono8 的相机自动输出 mono8。
+    image_encoding: auto
+
+    exposure_mode: auto
+    exposure_auto_mode: continuous
+    exposure_time_us: 8000.0
+
+    gain_mode: auto
+    gain_auto_mode: continuous
+    gain_value: 0.0

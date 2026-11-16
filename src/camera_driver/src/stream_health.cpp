@@ -73,6 +73,21 @@ void StreamHealthMonitor::on_reopen()
   ++backend_reopens_;
 }
 
+void StreamHealthMonitor::set_stall_timeout_s(double timeout_s)
+{
+  if (!(timeout_s > 0.0)) {
+    throw std::invalid_argument("stall_timeout_s must be > 0");
+  }
+  std::lock_guard<std::mutex> lock(mutex_);
+  stall_timeout_s_ = timeout_s;
+}
+
+double StreamHealthMonitor::stall_timeout_s() const
+{
+  std::lock_guard<std::mutex> lock(mutex_);
+  return stall_timeout_s_;
+}
+
 StreamState StreamHealthMonitor::state(std::optional<double> now) const
 {
   std::lock_guard<std::mutex> lock(mutex_);

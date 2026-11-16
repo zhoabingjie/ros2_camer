@@ -97,5 +97,5 @@ TEST(MvsBackend, RejectsUnknownTransportBeforeHardwareAccess)
   MvsBackend backend(options);
   EXPECT_THROW(
     backend.open(),
-    camera_driver::BackendUnavailableError);
+    std::invalid_argument);
 }

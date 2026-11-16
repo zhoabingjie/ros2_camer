@@ -1,0 +1,13 @@
+{
+  "C_Cpp.default.compileCommands": "${workspaceFolder}/../../build/camera_driver/compile_commands.json",
+  "C_Cpp.default.cppStandard": "c++17",
+  "C_Cpp.default.cStandard": "c17",
+  "C_Cpp.default.intelliSenseMode": "linux-gcc-x64",
+  "C_Cpp.intelliSenseCacheSize": 256,
+  "C_Cpp.intelliSenseMemoryLimit": 1024,
+  "C_Cpp.maxConcurrentThreads": 2,
+  "files.exclude": {
+    "**/__pycache__": true,
+    "**/*.pyc": true
+  }
+}

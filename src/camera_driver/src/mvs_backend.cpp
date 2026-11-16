@@ -20,9 +20,11 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <chrono>
 #include <cstdlib>
 #include <cstring>
+#include <iomanip>
 #include <filesystem>
 #include <limits>
 #include <mutex>
@@ -184,7 +186,119 @@ std::size_t checked_image_bytes(int width, int height, std::size_t channels)
 //因为后面 grab() 里调用 SDK 的 get_one_frame_timeout 时，缓冲区大小参数是 unsigned int：
   return bytes;
 }
+
+std::string lower_value(std::string value)
+{
+  std::transform(
+    value.begin(), value.end(), value.begin(),
+    [](unsigned char c) {return static_cast<char>(std::tolower(c));});
+  return value;
+}
+
+void require_finite_positive(double value, const char * name)
+{
+  if (!std::isfinite(value) || !(value > 0.0)) {
+    throw std::invalid_argument(std::string(name) + " must be finite and > 0");
+  }
+}
+
+void require_finite(double value, const char * name)
+{
+  if (!std::isfinite(value)) {
+    throw std::invalid_argument(std::string(name) + " must be finite");
+  }
+}
 }  // namespace
+
+void validate_mvs_options(const MvsBackendOptions & options)
+{
+  const std::string transport = lower_value(options.transport);
+  if (transport != "auto" && transport != "gige" && transport != "usb") {
+    throw std::invalid_argument(
+            "mvs_transport must be auto, usb, or gige");
+  }
+
+  if (options.width < 0 || options.height < 0) {
+    throw std::invalid_argument("mvs_width and mvs_height must be >= 0");
+  }
+
+  const std::string exposure_mode = lower_value(options.exposure_mode);
+  if (exposure_mode != "auto" &&
+    exposure_mode != "manual" &&
+    exposure_mode != "camera")
+  {
+    throw std::invalid_argument(
+            "exposure_mode must be 'auto', 'manual', or 'camera'");
+  }
+  const std::string exposure_auto_mode = lower_value(options.exposure_auto_mode);
+  if (exposure_auto_mode != "continuous" && exposure_auto_mode != "once") {
+    throw std::invalid_argument(
+            "exposure_auto_mode must be 'continuous' or 'once'");
+  }
+  require_finite_positive(options.exposure_time_us, "exposure_time_us");
+
+  const std::string gain_mode = lower_value(options.gain_mode);
+  if (gain_mode != "auto" &&
+    gain_mode != "manual" &&
+    gain_mode != "camera")
+  {
+    throw std::invalid_argument(
+            "gain_mode must be 'auto', 'manual', or 'camera'");
+  }
+  const std::string gain_auto_mode = lower_value(options.gain_auto_mode);
+  if (gain_auto_mode != "continuous" && gain_auto_mode != "once") {
+    throw std::invalid_argument("gain_auto_mode must be 'continuous' or 'once'");
+  }
+  require_finite(options.gain_value, "gain_value");
+
+  const std::string output_encoding = lower_value(options.output_encoding);
+  if (output_encoding != "auto" &&
+    output_encoding != "bgr8" &&
+    output_encoding != "mono8")
+  {
+    throw std::invalid_argument(
+            "image_encoding must be 'auto', 'bgr8', or 'mono8'");
+  }
+
+  const std::string pixel_format = lower_value(options.pixel_format);
+  if (!pixel_format.empty() &&
+    pixel_format != "mono8" &&
+    pixel_format != "bgr8" &&
+    pixel_format != "rgb8" &&
+    pixel_format != "bayerrg8" &&
+    pixel_format != "bayerbg8" &&
+    pixel_format != "bayergb8" &&
+    pixel_format != "bayergr8")
+  {
+    throw std::invalid_argument(
+            "mvs_pixel_format must be empty, BGR8, RGB8, BayerRG8, BayerBG8, "
+            "BayerGB8, BayerGR8, or Mono8");
+  }
+  if (pixel_format == "mono8" && output_encoding == "bgr8") {
+    throw std::invalid_argument(
+            "mvs_pixel_format=Mono8 conflicts with explicit image_encoding=bgr8; "
+            "use image_encoding=auto or mono8 for monochrome cameras");
+  }
+}
+
+std::vector<uint8_t> rgb8_to_bgr8(
+  const std::vector<uint8_t> & rgb, int width, int height)
+{
+  const std::size_t expected = checked_image_bytes(width, height, 3U);
+  if (rgb.size() != expected) {
+    throw std::invalid_argument(
+            "rgb8_to_bgr8 size mismatch: got " + std::to_string(rgb.size()) +
+            " expected " + std::to_string(expected));
+  }
+
+  std::vector<uint8_t> bgr(expected);
+  for (std::size_t i = 0; i < expected; i += 3U) {
+    bgr[i] = rgb[i + 2U];
+    bgr[i + 1U] = rgb[i + 1U];
+    bgr[i + 2U] = rgb[i];
+  }
+  return bgr;
+}
 
 std::string MvsSdkProbe::summary() const//记录了"找到了啥"和"搜了哪些地方"
 {
@@ -267,7 +381,9 @@ struct MvsApi
     void *, unsigned char *, unsigned int, MV_FRAME_OUT_INFO_EX *, unsigned int){nullptr};
   int (*convert_pixel_type)(void *, MV_CC_PIXEL_CONVERT_PARAM_EX *){nullptr};
   int (*set_enum_value)(void *, const char *, unsigned int){nullptr};
+  int (*get_enum_value)(void *, const char *, MVCC_ENUMVALUE *){nullptr};
   int (*set_float_value)(void *, const char *, float){nullptr};
+  int (*get_float_value)(void *, const char *, MVCC_FLOATVALUE *){nullptr};
   int (*set_int_value_ex)(void *, const char *, int64_t){nullptr};
   int (*get_int_value_ex)(void *, const char *, MVCC_INTVALUE_EX *){nullptr};
   int (*get_optimal_packet_size)(void *){nullptr};
@@ -306,7 +422,9 @@ struct MvsApi
     need(get_one_frame_timeout, "MV_CC_GetOneFrameTimeout");
     need(convert_pixel_type, "MV_CC_ConvertPixelTypeEx");
     need(set_enum_value, "MV_CC_SetEnumValue");
+    need(get_enum_value, "MV_CC_GetEnumValue");
     need(set_float_value, "MV_CC_SetFloatValue");
+    need(get_float_value, "MV_CC_GetFloatValue");
     need(set_int_value_ex, "MV_CC_SetIntValueEx");
     need(get_int_value_ex, "MV_CC_GetIntValueEx");
     need(get_optimal_packet_size, "MV_CC_GetOptimalPacketSize");
@@ -415,13 +533,6 @@ std::string normalise_serial(const unsigned char * raw, std::size_t max_len)
   return std::string(reinterpret_cast<const char *>(raw), len);
 }
 
-std::string lower_copy(std::string value)
-{
-  std::transform(value.begin(), value.end(), value.begin(),
-    [](unsigned char c) {return static_cast<char>(std::tolower(c));});
-  return value;
-}
-
 bool is_gige_device(const MV_CC_DEVICE_INFO * info)
 {
   return info != nullptr && (info->nTLayerType & MV_GIGE_DEVICE) != 0;
@@ -477,6 +588,238 @@ bool is_bayer_pixel_type(unsigned int pixel_type)
       return false;
   }
 }
+
+bool enum_contains(const MVCC_ENUMVALUE & value, unsigned int candidate)
+{
+  const unsigned int count = std::min<unsigned int>(
+    value.nSupportedNum, MV_MAX_XML_SYMBOLIC_NUM);
+  return std::find(value.nSupportValue, value.nSupportValue + count, candidate) !=
+         value.nSupportValue + count;
+}
+
+std::string supported_enum_values(const MVCC_ENUMVALUE & value)
+{
+  const unsigned int count = std::min<unsigned int>(
+    value.nSupportedNum, MV_MAX_XML_SYMBOLIC_NUM);
+  std::ostringstream os;
+  for (unsigned int i = 0; i < count; ++i) {
+    if (i != 0U) {os << ",";}
+    os << value.nSupportValue[i];
+  }
+  return os.str();
+}
+
+unsigned int exposure_auto_value(const std::string & mode)
+{
+  return lower_value(mode) == "once" ?
+         static_cast<unsigned int>(MV_EXPOSURE_AUTO_MODE_ONCE) :
+         static_cast<unsigned int>(MV_EXPOSURE_AUTO_MODE_CONTINUOUS);
+}
+
+unsigned int gain_auto_value(const std::string & mode)
+{
+  return lower_value(mode) == "once" ?
+         static_cast<unsigned int>(MV_GAIN_MODE_ONCE) :
+         static_cast<unsigned int>(MV_GAIN_MODE_CONTINUOUS);
+}
+
+void require_enum_value(
+  const MVCC_ENUMVALUE & supported, unsigned int requested, const std::string & feature)
+{
+  if (!enum_contains(supported, requested)) {
+    throw std::runtime_error(
+            feature + " value " + std::to_string(requested) +
+            " is not supported by this camera; supported values: " +
+            supported_enum_values(supported));
+  }
+}
+
+void require_float_in_range(
+  const MVCC_FLOATVALUE & range, double requested, const std::string & feature)
+{
+  if (requested < static_cast<double>(range.fMin) ||
+    requested > static_cast<double>(range.fMax))
+  {
+    std::ostringstream os;
+    os << feature << '=' << requested << " is outside camera range ["
+       << range.fMin << ", " << range.fMax << ']';
+    throw std::runtime_error(os.str());
+  }
+}
+
+bool float_matches(double actual, double requested)
+{
+  const double tolerance = std::max(1.0e-3, std::abs(requested) * 1.0e-4);
+  return std::abs(actual - requested) <= tolerance;
+}
+
+unsigned int pixel_type_for_name(const std::string & name)
+{
+  const std::string value = lower_value(name);
+  if (value == "mono8") {return PixelType_Gvsp_Mono8;}
+  if (value == "bgr8") {return PixelType_Gvsp_BGR8_Packed;}
+  if (value == "rgb8") {return PixelType_Gvsp_RGB8_Packed;}
+  if (value == "bayerrg8") {return PixelType_Gvsp_BayerRG8;}
+  if (value == "bayerbg8") {return PixelType_Gvsp_BayerBG8;}
+  if (value == "bayergb8") {return PixelType_Gvsp_BayerGB8;}
+  if (value == "bayergr8") {return PixelType_Gvsp_BayerGR8;}
+  throw std::invalid_argument(
+          "unsupported mvs_pixel_format '" + name +
+          "'; use Mono8, BGR8, RGB8, BayerRG8, BayerBG8, BayerGB8, or BayerGR8");
+}
+
+std::string pixel_type_name(uint32_t pixel_type)
+{
+  switch (pixel_type) {
+    case PixelType_Gvsp_Mono8: return "Mono8";
+    case PixelType_Gvsp_BGR8_Packed: return "BGR8";
+    case PixelType_Gvsp_RGB8_Packed: return "RGB8";
+    case PixelType_Gvsp_BayerRG8: return "BayerRG8";
+    case PixelType_Gvsp_BayerBG8: return "BayerBG8";
+    case PixelType_Gvsp_BayerGB8: return "BayerGB8";
+    case PixelType_Gvsp_BayerGR8: return "BayerGR8";
+    default: {
+        std::ostringstream os;
+        os << "0x" << std::hex << pixel_type;
+        return os.str();
+      }
+  }
+}
+
+void set_enum_checked(
+  MvsApi & api, void * handle, const char * feature, unsigned int value)
+{
+  const int rc = api.set_enum_value(handle, feature, value);
+  if (rc != MV_OK) {
+    throw std::runtime_error(
+            std::string("MV_CC_SetEnumValue(") + feature + ") failed: " +
+            mvs_error_text(rc));
+  }
+}
+
+void set_float_checked(
+  MvsApi & api, void * handle, const char * feature, double value)
+{
+  const int rc = api.set_float_value(handle, feature, static_cast<float>(value));
+  if (rc != MV_OK) {
+    throw std::runtime_error(
+            std::string("MV_CC_SetFloatValue(") + feature + ") failed: " +
+            mvs_error_text(rc));
+  }
+}
+
+MVCC_ENUMVALUE get_enum_checked(MvsApi & api, void * handle, const char * feature)
+{
+  MVCC_ENUMVALUE value{};
+  const int rc = api.get_enum_value(handle, feature, &value);
+  if (rc != MV_OK) {
+    throw std::runtime_error(
+            std::string("MV_CC_GetEnumValue(") + feature + ") failed: " +
+            mvs_error_text(rc));
+  }
+  return value;
+}
+
+MVCC_FLOATVALUE get_float_checked(MvsApi & api, void * handle, const char * feature)
+{
+  MVCC_FLOATVALUE value{};
+  const int rc = api.get_float_value(handle, feature, &value);
+  if (rc != MV_OK) {
+    throw std::runtime_error(
+            std::string("MV_CC_GetFloatValue(") + feature + ") failed: " +
+            mvs_error_text(rc));
+  }
+  return value;
+}
+
+bool pixel_type_is_color(unsigned int pixel_type)
+{
+  return pixel_type == PixelType_Gvsp_BGR8_Packed ||
+         pixel_type == PixelType_Gvsp_RGB8_Packed ||
+         is_bayer_pixel_type(pixel_type);
+}
+
+bool pixel_type_is_known(unsigned int pixel_type)
+{
+  return pixel_type == PixelType_Gvsp_Mono8 || pixel_type_is_color(pixel_type);
+}
+
+unsigned int select_pixel_format(
+  MvsApi & api, void * handle, const std::string & requested,
+  const std::string & output_encoding)
+{
+  const MVCC_ENUMVALUE supported = get_enum_checked(api, handle, "PixelFormat");
+  const std::string encoding = lower_value(output_encoding);
+
+  if (!requested.empty()) {
+    const unsigned int wanted = pixel_type_for_name(requested);
+    if (encoding == "bgr8" && !pixel_type_is_color(wanted)) {
+      throw std::runtime_error(
+              "mvs_pixel_format=" + requested +
+              " cannot satisfy explicit image_encoding=bgr8");
+    }
+    require_enum_value(supported, wanted, "PixelFormat");
+    set_enum_checked(api, handle, "PixelFormat", wanted);
+  } else {
+    const std::vector<unsigned int> color_priority{
+      PixelType_Gvsp_BGR8_Packed,
+      PixelType_Gvsp_RGB8_Packed,
+      PixelType_Gvsp_BayerRG8,
+      PixelType_Gvsp_BayerBG8,
+      PixelType_Gvsp_BayerGB8,
+      PixelType_Gvsp_BayerGR8};
+    std::vector<unsigned int> priority;
+    if (encoding == "mono8") {
+      priority.push_back(PixelType_Gvsp_Mono8);
+      priority.insert(priority.end(), color_priority.begin(), color_priority.end());
+    } else {
+      priority = color_priority;
+      if (encoding == "auto") {
+        priority.push_back(PixelType_Gvsp_Mono8);
+      }
+    }
+    std::string set_errors;
+    bool selected = false;
+    for (const unsigned int candidate : priority) {
+      if (!enum_contains(supported, candidate)) {continue;}
+      try {
+        set_enum_checked(api, handle, "PixelFormat", candidate);
+        selected = true;
+        break;
+      } catch (const std::exception & exc) {
+        set_errors += (set_errors.empty() ? "" : "; ") + std::string(exc.what());
+      }
+    }
+    if (!selected) {
+      throw std::runtime_error(
+              "camera reports no usable PixelFormat for image_encoding=" +
+              encoding + ". Supported enum values: " +
+              supported_enum_values(supported) +
+              (set_errors.empty() ? "" : "; set errors: " + set_errors));
+    }
+  }
+
+  const MVCC_ENUMVALUE actual = get_enum_checked(api, handle, "PixelFormat");
+  if (!pixel_type_is_known(actual.nCurValue)) {
+    throw std::runtime_error(
+            "PixelFormat was set to an unsupported value: " +
+            pixel_type_name(actual.nCurValue));
+  }
+  if (encoding == "bgr8" && !pixel_type_is_color(actual.nCurValue)) {
+    throw std::runtime_error(
+            "PixelFormat is monochrome but image_encoding=bgr8 was explicitly required");
+  }
+  return actual.nCurValue;
+}
+
+std::string output_encoding_for_pixel_type(
+  unsigned int pixel_type, const std::string & requested_encoding)
+{
+  const std::string encoding = lower_value(requested_encoding);
+  if (encoding == "mono8") {return "mono8";}
+  if (encoding == "bgr8") {return "bgr8";}
+  return pixel_type_is_color(pixel_type) ? "bgr8" : "mono8";
+}
 }  // namespace
 #endif  // HIKROBOT_MVS_AVAILABLE
 
@@ -507,6 +850,29 @@ const MvsSdkProbe & MvsBackend::probe() const// 懒加载探测结果 用到才�
   return *probe_;
 }
 
+std::string mvs_pixel_type_name(uint32_t pixel_type)
+{
+#ifdef HIKROBOT_MVS_AVAILABLE
+  return pixel_type_name(pixel_type);
+#else
+  std::ostringstream os;
+  os << "0x" << std::hex << pixel_type;
+  return os.str();
+#endif
+}
+
+bool mvs_pixel_type_is_color(uint32_t pixel_type)
+{
+#ifdef HIKROBOT_MVS_AVAILABLE
+  return pixel_type == PixelType_Gvsp_BGR8_Packed ||
+         pixel_type == PixelType_Gvsp_RGB8_Packed ||
+         is_bayer_pixel_type(pixel_type);
+#else
+  (void)pixel_type;
+  return false;
+#endif
+}
+
 std::string MvsBackend::describe() const
 {
   const auto & report = probe();
@@ -520,6 +886,23 @@ std::string MvsBackend::describe() const
   os << " sdk_library_found=" << (report.library_found() ? "true" : "false")
      << " sdk_headers_found=" << (report.headers_found() ? "true" : "false");
   if (!sdk_version_.empty()) {os << " sdk_version=" << sdk_version_;}
+  if (!camera_info_.model.empty()) {os << " model=" << camera_info_.model;}
+  if (!camera_info_.serial_number.empty()) {os << " serial=" << camera_info_.serial_number;}
+  if (camera_info_.vendor_id != 0U) {os << " vendor_id=" << camera_info_.vendor_id;}
+  if (camera_info_.product_id != 0U) {os << " product_id=" << camera_info_.product_id;}
+  if (!camera_info_.pixel_format.empty()) {os << " pixel_format=" << camera_info_.pixel_format;}
+  if (!camera_info_.image_encoding.empty()) {os << " image_encoding=" << camera_info_.image_encoding;}
+  if (camera_info_.width > 0 && camera_info_.height > 0) {
+    os << " resolution=" << camera_info_.width << "x" << camera_info_.height;
+  }
+  if (!camera_info_.exposure_mode.empty()) {
+    os << " exposure_mode=" << camera_info_.exposure_mode
+       << " exposure_time_us=" << camera_info_.exposure_time_us;
+  }
+  if (!camera_info_.gain_mode.empty()) {
+    os << " gain_mode=" << camera_info_.gain_mode
+       << " gain_value=" << camera_info_.gain_value;
+  }
   if (!device_summary_.empty()) {os << " " << device_summary_;}
   return os.str();
 }
@@ -527,12 +910,8 @@ std::string MvsBackend::describe() const
 void MvsBackend::open()//打开相机
 {
   if (handle_ != nullptr) {close();}//handle_：保存 SDK 设备句柄的成员变量
-  const std::string transport = lower_copy(options_.transport);
-  if (transport != "auto" && transport != "gige" && transport != "usb") {
-    throw BackendUnavailableError(
-            "invalid mvs_transport='" + options_.transport +
-            "'; expected auto, gige or usb");
-  }
+  validate_mvs_options(options_);
+  const std::string transport = lower_value(options_.transport);
   const auto & report = probe();//probe() 负责检查 MVS SDK 的相关信息，例如 SDK 动态库和头文件是否存在
   if (!report.library_found()) {//library_found()：检查是否找到 SDK 动态库
     throw BackendUnavailableError(
@@ -631,6 +1010,22 @@ void MvsBackend::open()//打开相机
             "). Set mvs_serial_number to select one.");
   }
   chosen = matching.front();
+  camera_info_ = MvsCameraInfo{};
+  camera_info_.connected = false;
+  camera_info_.image_encoding = options_.output_encoding;
+  if (is_usb_device(chosen)) {
+    const auto & usb = chosen->SpecialInfo.stUsb3VInfo;
+    camera_info_.transport = "USB3 Vision";
+    camera_info_.model = normalise_serial(usb.chModelName, 64);
+    camera_info_.serial_number = normalise_serial(usb.chSerialNumber, 64);
+    camera_info_.vendor_id = usb.idVendor;
+    camera_info_.product_id = usb.idProduct;
+  } else {
+    const auto & gige = chosen->SpecialInfo.stGigEInfo;
+    camera_info_.transport = "GigE";
+    camera_info_.model = normalise_serial(gige.chModelName, 32);
+    camera_info_.serial_number = normalise_serial(gige.chSerialNumber, 16);
+  }
 
   rc = api->create_handle(&handle_, chosen);
   if (rc != MV_OK) {throw std::runtime_error("MV_CC_CreateHandle failed: " + mvs_error_text(rc));}
@@ -641,59 +1036,42 @@ void MvsBackend::open()//打开相机
             " (is another application, e.g. the MVS client, holding the camera?)");
   }
 
-  // --- optional settings. A rejection is reported, not silently ignored -----
-  auto warn_if = [](int code, const char * what) {
-      if (code != MV_OK) {
-        std::ostringstream os;
-        os << "MVS setting ignored: " << what << " -> " << mvs_error_text(code);
-        throw std::runtime_error(os.str());
-      }
-    };
+  // 自动适配相机支持的格式：彩色优先，只有 Mono8 的相机仍可正常启动。
+  const unsigned int selected_pixel_type =
+    select_pixel_format(
+    *api, handle_, options_.pixel_format, options_.output_encoding);
+  camera_info_.pixel_format = mvs_pixel_type_name(selected_pixel_type);
+  camera_info_.image_encoding =
+    output_encoding_for_pixel_type(selected_pixel_type, options_.output_encoding);
 
-//设置图像像素格式
-  if (!options_.pixel_format.empty()) {
-    // MV_CC_SetEnumValue takes the numeric enum value, so the PixelType.h
-    // constants are used directly instead of a string lookup.
-    if (options_.pixel_format == "Mono8") {//读取之前保存的像素格式配置
-      warn_if(api->set_enum_value(handle_, "PixelFormat", PixelType_Gvsp_Mono8), "PixelFormat=Mono8");
-    } else if (options_.pixel_format == "BGR8") {
-      warn_if(api->set_enum_value(handle_, "PixelFormat", PixelType_Gvsp_BGR8_Packed), "PixelFormat=BGR8");
-    } else if (options_.pixel_format == "RGB8") {
-      warn_if(api->set_enum_value(handle_, "PixelFormat", PixelType_Gvsp_RGB8_Packed), "PixelFormat=RGB8");
-    } else if (options_.pixel_format == "BayerRG8") {
-      warn_if(api->set_enum_value(handle_, "PixelFormat", PixelType_Gvsp_BayerRG8), "PixelFormat=BayerRG8");
-    } else if (options_.pixel_format == "BayerBG8") {
-      warn_if(api->set_enum_value(handle_, "PixelFormat", PixelType_Gvsp_BayerBG8), "PixelFormat=BayerBG8");
-    } else if (options_.pixel_format == "BayerGB8") {
-      warn_if(api->set_enum_value(handle_, "PixelFormat", PixelType_Gvsp_BayerGB8), "PixelFormat=BayerGB8");
-    } else if (options_.pixel_format == "BayerGR8") {
-      warn_if(api->set_enum_value(handle_, "PixelFormat", PixelType_Gvsp_BayerGR8), "PixelFormat=BayerGR8");
-    } else {
-      throw std::runtime_error(
-              "unsupported mvs_pixel_format '" + options_.pixel_format +
-              "'; supported: Mono8, BGR8, RGB8, BayerRG8, BayerBG8, BayerGB8, BayerGR8");
+  if (options_.width > 0) {
+    const int width_rc = api->set_int_value_ex(handle_, "Width", options_.width);
+    if (width_rc != MV_OK) {
+      throw std::runtime_error("MV_CC_SetIntValueEx(Width) failed: " + mvs_error_text(width_rc));
     }
   }
-//设置图像宽度和高度
-  if (options_.width > 0) {
-    warn_if(api->set_int_value_ex(handle_, "Width", options_.width), "Width");
-  }
   if (options_.height > 0) {
-    warn_if(api->set_int_value_ex(handle_, "Height", options_.height), "Height");
+    const int height_rc = api->set_int_value_ex(handle_, "Height", options_.height);
+    if (height_rc != MV_OK) {
+      throw std::runtime_error("MV_CC_SetIntValueEx(Height) failed: " + mvs_error_text(height_rc));
+    }
   }
-  if (options_.exposure_us > 0.0) {//相机曝光
-    warn_if(
-      api->set_enum_value(handle_, "ExposureAuto", 0), "ExposureAuto=Off");
-    warn_if(
-      api->set_float_value(
-        handle_, "ExposureTime", static_cast<float>(options_.exposure_us)),
-      "ExposureTime");
+
+  MVCC_INTVALUE_EX width_value{};
+  MVCC_INTVALUE_EX height_value{};
+  rc = api->get_int_value_ex(handle_, "Width", &width_value);
+  if (rc != MV_OK || width_value.nCurValue <= 0) {
+    throw std::runtime_error("could not read Width: " + mvs_error_text(rc));
   }
-  if (options_.gain > 0.0) {//增益
-    warn_if(api->set_enum_value(handle_, "GainAuto", 0), "GainAuto=Off");
-    warn_if(
-      api->set_float_value(handle_, "Gain", static_cast<float>(options_.gain)), "Gain");
+  rc = api->get_int_value_ex(handle_, "Height", &height_value);
+  if (rc != MV_OK || height_value.nCurValue <= 0) {
+    throw std::runtime_error("could not read Height: " + mvs_error_text(rc));
   }
+  camera_info_.width = static_cast<int>(width_value.nCurValue);
+  camera_info_.height = static_cast<int>(height_value.nCurValue);
+
+  // 曝光和增益独立应用；0.0 增益也必须能够显式设置。
+  apply_control_settings(options_);
 
   // GigE: enlarge the packet size to reduce per-packet overhead / loss.
   if ((chosen->nTLayerType & MV_GIGE_DEVICE) != 0) {
@@ -712,8 +1090,10 @@ void MvsBackend::open()//打开相机
   }
   buffer_.assign(static_cast<std::size_t>(payload.nCurValue), 0);
 
-  rc = api->start_grabbing(handle_);//启动采集
+  rc = api->start_grabbing(handle_);
   if (rc != MV_OK) {throw std::runtime_error("MV_CC_StartGrabbing failed: " + mvs_error_text(rc));}
+  grabbing_ = true;
+  camera_info_.connected = true;
   return;
 #else
   throw std::logic_error(
@@ -723,6 +1103,521 @@ void MvsBackend::open()//打开相机
 #endif
 }
 
+void MvsBackend::apply_control_settings(const MvsBackendOptions & settings)
+{
+  validate_mvs_options(settings);
+#ifdef HIKROBOT_MVS_AVAILABLE
+  if (handle_ == nullptr) {
+    throw std::runtime_error("cannot set exposure/gain before the MVS camera is open");
+  }
+
+  std::string err;
+  MvsApi * api = ensure_api(options_.sdk_lib_candidates, err);
+  if (api == nullptr) {
+    throw std::runtime_error("MVS SDK is unavailable: " + err);
+  }
+  auto try_get_enum = [&](const char * feature) -> std::optional<MVCC_ENUMVALUE> {
+      MVCC_ENUMVALUE value{};
+      if (api->get_enum_value(handle_, feature, &value) == MV_OK) {
+        return value;
+      }
+      return std::nullopt;
+    };
+  auto try_get_float = [&](const char * feature) -> std::optional<MVCC_FLOATVALUE> {
+      MVCC_FLOATVALUE value{};
+      if (api->get_float_value(handle_, feature, &value) == MV_OK) {
+        return value;
+      }
+      return std::nullopt;
+    };
+
+  MvsBackendOptions previous = options_;
+  MvsBackendOptions next = previous;
+  next.exposure_mode = lower_value(settings.exposure_mode);
+  next.exposure_auto_mode = lower_value(settings.exposure_auto_mode);
+  next.exposure_time_us = settings.exposure_time_us;
+  next.gain_mode = lower_value(settings.gain_mode);
+  next.gain_auto_mode = lower_value(settings.gain_auto_mode);
+  next.gain_value = settings.gain_value;
+
+  const auto exposure_auto_supported = try_get_enum("ExposureAuto");
+  const auto gain_auto_supported = try_get_enum("GainAuto");
+
+  auto choose_auto_mode =
+    [](const std::optional<MVCC_ENUMVALUE> & supported,
+      unsigned int desired, unsigned int alternate) -> std::optional<unsigned int> {
+      if (!supported.has_value()) {return std::nullopt;}
+      if (enum_contains(*supported, desired)) {return desired;}
+      if (enum_contains(*supported, alternate)) {return alternate;}
+      return std::nullopt;
+    };
+
+  std::optional<unsigned int> exposure_auto;
+  if (next.exposure_mode == "auto") {
+    const unsigned int desired = exposure_auto_value(next.exposure_auto_mode);
+    const unsigned int alternate =
+      desired == MV_EXPOSURE_AUTO_MODE_CONTINUOUS ?
+      MV_EXPOSURE_AUTO_MODE_ONCE : MV_EXPOSURE_AUTO_MODE_CONTINUOUS;
+    exposure_auto = choose_auto_mode(exposure_auto_supported, desired, alternate);
+    if (exposure_auto.has_value()) {
+      next.exposure_auto_mode =
+        *exposure_auto == MV_EXPOSURE_AUTO_MODE_ONCE ? "once" : "continuous";
+    } else {
+      // 相机没有自动曝光能力时保持它当前设置，而不是导致启动失败。
+      next.exposure_mode = "camera";
+    }
+  } else if (exposure_auto_supported.has_value() &&
+    enum_contains(*exposure_auto_supported, MV_EXPOSURE_AUTO_MODE_OFF))
+  {
+    exposure_auto = MV_EXPOSURE_AUTO_MODE_OFF;
+  }
+
+  std::optional<unsigned int> gain_auto;
+  if (next.gain_mode == "auto") {
+    const unsigned int desired = gain_auto_value(next.gain_auto_mode);
+    const unsigned int alternate =
+      desired == MV_GAIN_MODE_CONTINUOUS ? MV_GAIN_MODE_ONCE : MV_GAIN_MODE_CONTINUOUS;
+    gain_auto = choose_auto_mode(gain_auto_supported, desired, alternate);
+    if (gain_auto.has_value()) {
+      next.gain_auto_mode = *gain_auto == MV_GAIN_MODE_ONCE ? "once" : "continuous";
+    } else {
+      next.gain_mode = "camera";
+    }
+  } else if (gain_auto_supported.has_value() &&
+    enum_contains(*gain_auto_supported, MV_GAIN_MODE_OFF))
+  {
+    gain_auto = MV_GAIN_MODE_OFF;
+  }
+
+  const auto old_exposure_auto = try_get_enum("ExposureAuto");
+  const auto old_gain_auto = try_get_enum("GainAuto");
+  const auto old_exposure = try_get_float("ExposureTime");
+  const auto old_gain = try_get_float("Gain");
+
+  auto rollback = [&]() {
+      std::string rollback_error;
+      if (old_exposure_auto.has_value()) {
+        const int rc = api->set_enum_value(
+          handle_, "ExposureAuto", old_exposure_auto->nCurValue);
+        if (rc != MV_OK) {
+          rollback_error += "ExposureAuto=" + mvs_error_text(rc);
+        }
+      }
+      if ((!old_exposure_auto.has_value() ||
+        old_exposure_auto->nCurValue == MV_EXPOSURE_AUTO_MODE_OFF) &&
+        old_exposure.has_value())
+      {
+        const int rc = api->set_float_value(handle_, "ExposureTime", old_exposure->fCurValue);
+        if (rc != MV_OK) {
+          rollback_error += (rollback_error.empty() ? "" : "; ") +
+            std::string("ExposureTime=") + mvs_error_text(rc);
+        }
+      }
+      if (old_gain_auto.has_value()) {
+        const int rc = api->set_enum_value(handle_, "GainAuto", old_gain_auto->nCurValue);
+        if (rc != MV_OK) {
+          rollback_error += (rollback_error.empty() ? "" : "; ") +
+            std::string("GainAuto=") + mvs_error_text(rc);
+        }
+      }
+      if ((!old_gain_auto.has_value() || old_gain_auto->nCurValue == MV_GAIN_MODE_OFF) &&
+        old_gain.has_value())
+      {
+        const int rc = api->set_float_value(handle_, "Gain", old_gain->fCurValue);
+        if (rc != MV_OK) {
+          rollback_error += (rollback_error.empty() ? "" : "; ") +
+            std::string("Gain=") + mvs_error_text(rc);
+        }
+      }
+      return rollback_error;
+    };
+
+  std::optional<MVCC_FLOATVALUE> exposure_range;
+  std::optional<MVCC_FLOATVALUE> gain_range;
+  try {
+    if (exposure_auto.has_value()) {
+      set_enum_checked(*api, handle_, "ExposureAuto", *exposure_auto);
+    }
+    if (next.exposure_mode == "manual") {
+      exposure_range = get_float_checked(*api, handle_, "ExposureTime");
+      require_float_in_range(*exposure_range, next.exposure_time_us, "exposure_time_us");
+      set_float_checked(*api, handle_, "ExposureTime", next.exposure_time_us);
+    } else if (next.exposure_mode == "auto") {
+      exposure_range = try_get_float("ExposureTime");
+    }
+
+    if (gain_auto.has_value()) {
+      set_enum_checked(*api, handle_, "GainAuto", *gain_auto);
+    }
+    if (next.gain_mode == "manual") {
+      gain_range = get_float_checked(*api, handle_, "Gain");
+      require_float_in_range(*gain_range, next.gain_value, "gain_value");
+      set_float_checked(*api, handle_, "Gain", next.gain_value);
+    } else if (next.gain_mode == "auto") {
+      gain_range = try_get_float("Gain");
+    }
+  } catch (const std::exception & exc) {
+    const std::string rollback_error = rollback();
+    throw std::runtime_error(
+            std::string("failed to apply exposure/gain settings: ") + exc.what() +
+            (rollback_error.empty() ? "" : "; rollback also failed: " + rollback_error));
+  }
+
+  // 连续自动模式必须确认已经生效；once 模式可能很快回到 Off，因此只检查设置调用成功。
+  if (exposure_auto.has_value() &&
+    *exposure_auto == MV_EXPOSURE_AUTO_MODE_CONTINUOUS)
+  {
+    const unsigned int actual_exposure_auto =
+      get_enum_checked(*api, handle_, "ExposureAuto").nCurValue;
+    if (actual_exposure_auto != *exposure_auto) {
+      const std::string rollback_error = rollback();
+      throw std::runtime_error(
+              "ExposureAuto did not enter continuous mode" +
+              (rollback_error.empty() ? "" : "; rollback failed: " + rollback_error));
+    }
+  }
+  if (gain_auto.has_value() && *gain_auto == MV_GAIN_MODE_CONTINUOUS) {
+    const unsigned int actual_gain_auto =
+      get_enum_checked(*api, handle_, "GainAuto").nCurValue;
+    if (actual_gain_auto != *gain_auto) {
+      const std::string rollback_error = rollback();
+      throw std::runtime_error(
+              "GainAuto did not enter continuous mode" +
+              (rollback_error.empty() ? "" : "; rollback failed: " + rollback_error));
+    }
+  }
+
+  double actual_exposure_time = next.exposure_time_us;
+  double actual_gain = next.gain_value;
+  try {
+    if (next.exposure_mode == "manual") {
+      const MVCC_FLOATVALUE exposure_now =
+        get_float_checked(*api, handle_, "ExposureTime");
+      actual_exposure_time = exposure_now.fCurValue;
+      if (!float_matches(actual_exposure_time, next.exposure_time_us)) {
+        throw std::runtime_error(
+                "ExposureTime readback mismatch: requested " +
+                std::to_string(next.exposure_time_us) + ", got " +
+                std::to_string(actual_exposure_time));
+      }
+    } else {
+      const auto exposure_now = try_get_float("ExposureTime");
+      if (exposure_now.has_value()) {actual_exposure_time = exposure_now->fCurValue;}
+    }
+    if (next.gain_mode == "manual") {
+      const MVCC_FLOATVALUE gain_now = get_float_checked(*api, handle_, "Gain");
+      actual_gain = gain_now.fCurValue;
+      if (!float_matches(actual_gain, next.gain_value)) {
+        throw std::runtime_error(
+                "Gain readback mismatch: requested " + std::to_string(next.gain_value) +
+                ", got " + std::to_string(actual_gain));
+      }
+    } else {
+      const auto gain_now = try_get_float("Gain");
+      if (gain_now.has_value()) {actual_gain = gain_now->fCurValue;}
+    }
+  } catch (const std::exception & exc) {
+    const std::string rollback_error = rollback();
+    throw std::runtime_error(
+            std::string("failed to verify exposure/gain readback: ") + exc.what() +
+            (rollback_error.empty() ? "" : "; rollback failed: " + rollback_error));
+  }
+
+  options_ = next;
+  camera_info_.exposure_mode = next.exposure_mode;
+  camera_info_.exposure_auto_mode = next.exposure_auto_mode;
+  camera_info_.exposure_time_us = actual_exposure_time;
+  camera_info_.gain_mode = next.gain_mode;
+  camera_info_.gain_auto_mode = next.gain_auto_mode;
+  camera_info_.gain_value = actual_gain;
+  if (exposure_range.has_value()) {
+    camera_info_.exposure_min_us = exposure_range->fMin;
+    camera_info_.exposure_max_us = exposure_range->fMax;
+  }
+  if (gain_range.has_value()) {
+    camera_info_.gain_min = gain_range->fMin;
+    camera_info_.gain_max = gain_range->fMax;
+  }
+#else
+  (void)settings;
+  throw std::logic_error("MVS headers are unavailable; exposure/gain cannot be applied");
+#endif
+}
+
+void MvsBackend::apply_pixel_format(
+  const std::string & pixel_format, const std::string & output_encoding)
+{
+#ifdef HIKROBOT_MVS_AVAILABLE
+  if (handle_ == nullptr) {
+    throw std::runtime_error("cannot change PixelFormat before the MVS camera is open");
+  }
+  MvsBackendOptions candidate = options_;
+  candidate.pixel_format = pixel_format;
+  candidate.output_encoding = output_encoding;
+  validate_mvs_options(candidate);
+
+  std::string err;
+  MvsApi * api = ensure_api(options_.sdk_lib_candidates, err);
+  if (api == nullptr) {
+    throw std::runtime_error("MVS SDK is unavailable: " + err);
+  }
+
+  const unsigned int old_pixel_type =
+    get_enum_checked(*api, handle_, "PixelFormat").nCurValue;
+  if (grabbing_) {
+    const int stop_rc = api->stop_grabbing(handle_);
+    if (stop_rc != MV_OK) {
+      throw std::runtime_error("MV_CC_StopGrabbing failed: " + mvs_error_text(stop_rc));
+    }
+    grabbing_ = false;
+  }
+
+  auto restart_with_pixel = [&](unsigned int pixel_type) {
+      const int set_rc = api->set_enum_value(handle_, "PixelFormat", pixel_type);
+      if (set_rc != MV_OK) {
+        return std::string("PixelFormat restore failed: ") + mvs_error_text(set_rc);
+      }
+      MVCC_INTVALUE_EX payload{};
+      const int payload_rc = api->get_int_value_ex(handle_, "PayloadSize", &payload);
+      if (payload_rc != MV_OK || payload.nCurValue <= 0) {
+        return std::string("PayloadSize read failed: ") + mvs_error_text(payload_rc);
+      }
+      buffer_.assign(static_cast<std::size_t>(payload.nCurValue), 0);
+      const int start_rc = api->start_grabbing(handle_);
+      if (start_rc != MV_OK) {
+        return std::string("MV_CC_StartGrabbing failed: ") + mvs_error_text(start_rc);
+      }
+      grabbing_ = true;
+      return std::string{};
+    };
+
+  try {
+    const unsigned int selected =
+      select_pixel_format(
+      *api, handle_, candidate.pixel_format, candidate.output_encoding);
+    MVCC_INTVALUE_EX payload{};
+    const int payload_rc = api->get_int_value_ex(handle_, "PayloadSize", &payload);
+    if (payload_rc != MV_OK || payload.nCurValue <= 0) {
+      throw std::runtime_error("PayloadSize read failed: " + mvs_error_text(payload_rc));
+    }
+    buffer_.assign(static_cast<std::size_t>(payload.nCurValue), 0);
+    const int start_rc = api->start_grabbing(handle_);
+    if (start_rc != MV_OK) {
+      throw std::runtime_error("MV_CC_StartGrabbing failed: " + mvs_error_text(start_rc));
+    }
+    grabbing_ = true;
+    options_.pixel_format = candidate.pixel_format;
+    options_.output_encoding = candidate.output_encoding;
+    camera_info_.pixel_format = mvs_pixel_type_name(selected);
+    camera_info_.image_encoding =
+      output_encoding_for_pixel_type(selected, candidate.output_encoding);
+    camera_info_.connected = true;
+  } catch (const std::exception & exc) {
+    const std::string restart_error = restart_with_pixel(old_pixel_type);
+    camera_info_.connected = grabbing_;
+    throw std::runtime_error(
+            std::string("failed to change PixelFormat: ") + exc.what() +
+            (restart_error.empty() ? "; previous stream restored" :
+            "; previous stream restore failed: " + restart_error));
+  }
+#else
+  (void)pixel_format;
+  (void)output_encoding;
+  throw std::logic_error("MVS headers are unavailable; PixelFormat cannot be changed");
+#endif
+}
+
+void MvsBackend::apply_geometry(int width, int height)
+{
+#ifdef HIKROBOT_MVS_AVAILABLE
+  if (handle_ == nullptr) {
+    throw std::runtime_error("cannot change Width/Height before the MVS camera is open");
+  }
+  if (width < 0 || height < 0) {
+    throw std::invalid_argument("mvs_width and mvs_height must be >= 0");
+  }
+  if (width == 0 && height == 0) {
+    return;
+  }
+
+  std::string err;
+  MvsApi * api = ensure_api(options_.sdk_lib_candidates, err);
+  if (api == nullptr) {
+    throw std::runtime_error("MVS SDK is unavailable: " + err);
+  }
+
+  MVCC_INTVALUE_EX old_width{};
+  MVCC_INTVALUE_EX old_height{};
+  int rc = api->get_int_value_ex(handle_, "Width", &old_width);
+  if (rc != MV_OK || old_width.nCurValue <= 0) {
+    throw std::runtime_error("could not read old Width: " + mvs_error_text(rc));
+  }
+  rc = api->get_int_value_ex(handle_, "Height", &old_height);
+  if (rc != MV_OK || old_height.nCurValue <= 0) {
+    throw std::runtime_error("could not read old Height: " + mvs_error_text(rc));
+  }
+
+  if (grabbing_) {
+    rc = api->stop_grabbing(handle_);
+    if (rc != MV_OK) {
+      throw std::runtime_error("MV_CC_StopGrabbing failed: " + mvs_error_text(rc));
+    }
+    grabbing_ = false;
+  }
+
+  auto apply_and_start = [&](int target_width, int target_height, std::string & error) {
+      if (target_width > 0) {
+        const int width_rc =
+          api->set_int_value_ex(handle_, "Width", target_width);
+        if (width_rc != MV_OK) {
+          error = "MV_CC_SetIntValueEx(Width) failed: " + mvs_error_text(width_rc);
+          return false;
+        }
+      }
+      if (target_height > 0) {
+        const int height_rc =
+          api->set_int_value_ex(handle_, "Height", target_height);
+        if (height_rc != MV_OK) {
+          error = "MV_CC_SetIntValueEx(Height) failed: " + mvs_error_text(height_rc);
+          return false;
+        }
+      }
+
+      MVCC_INTVALUE_EX actual_width{};
+      MVCC_INTVALUE_EX actual_height{};
+      const int width_rc = api->get_int_value_ex(handle_, "Width", &actual_width);
+      const int height_rc = api->get_int_value_ex(handle_, "Height", &actual_height);
+      if (width_rc != MV_OK || actual_width.nCurValue <= 0) {
+        error = "could not read Width: " + mvs_error_text(width_rc);
+        return false;
+      }
+      if (height_rc != MV_OK || actual_height.nCurValue <= 0) {
+        error = "could not read Height: " + mvs_error_text(height_rc);
+        return false;
+      }
+      if (target_width > 0 && actual_width.nCurValue != target_width) {
+        error = "Width readback mismatch: requested " + std::to_string(target_width) +
+          ", got " + std::to_string(actual_width.nCurValue);
+        return false;
+      }
+      if (target_height > 0 && actual_height.nCurValue != target_height) {
+        error = "Height readback mismatch: requested " + std::to_string(target_height) +
+          ", got " + std::to_string(actual_height.nCurValue);
+        return false;
+      }
+
+      MVCC_INTVALUE_EX payload{};
+      const int payload_rc = api->get_int_value_ex(handle_, "PayloadSize", &payload);
+      if (payload_rc != MV_OK || payload.nCurValue <= 0) {
+        error = "PayloadSize read failed: " + mvs_error_text(payload_rc);
+        return false;
+      }
+      buffer_.assign(static_cast<std::size_t>(payload.nCurValue), 0);
+      const int start_rc = api->start_grabbing(handle_);
+      if (start_rc != MV_OK) {
+        error = "MV_CC_StartGrabbing failed: " + mvs_error_text(start_rc);
+        return false;
+      }
+      grabbing_ = true;
+      camera_info_.connected = true;
+      camera_info_.width = static_cast<int>(actual_width.nCurValue);
+      camera_info_.height = static_cast<int>(actual_height.nCurValue);
+      return true;
+    };
+
+  std::string apply_error;
+  if (!apply_and_start(width, height, apply_error)) {
+    std::string restore_error;
+    camera_info_.connected = false;
+    if (!apply_and_start(
+        static_cast<int>(old_width.nCurValue),
+        static_cast<int>(old_height.nCurValue), restore_error))
+    {
+      throw std::runtime_error(
+              "failed to change Width/Height: " + apply_error +
+              "; previous stream restore failed: " + restore_error);
+    }
+    throw std::runtime_error(
+            "failed to change Width/Height: " + apply_error +
+            "; previous stream restored");
+  }
+
+  options_.width = width;
+  options_.height = height;
+#else
+  (void)width;
+  (void)height;
+  throw std::logic_error("MVS headers are unavailable; Width/Height cannot be changed");
+#endif
+}
+
+MvsCameraInfo MvsBackend::camera_info() const
+{
+  MvsCameraInfo info = camera_info_;
+#ifdef HIKROBOT_MVS_AVAILABLE
+  if (handle_ == nullptr) {
+    info.connected = false;
+    return info;
+  }
+
+  std::string err;
+  MvsApi * api = ensure_api(options_.sdk_lib_candidates, err);
+  if (api == nullptr) {
+    info.connected = false;
+    return info;
+  }
+  info.connected = true;
+
+  MVCC_ENUMVALUE pixel{};
+  if (api->get_enum_value(handle_, "PixelFormat", &pixel) == MV_OK) {
+    info.pixel_format = mvs_pixel_type_name(pixel.nCurValue);
+    info.image_encoding =
+      output_encoding_for_pixel_type(pixel.nCurValue, options_.output_encoding);
+  }
+  MVCC_INTVALUE_EX width{};
+  MVCC_INTVALUE_EX height{};
+  if (api->get_int_value_ex(handle_, "Width", &width) == MV_OK) {
+    info.width = static_cast<int>(width.nCurValue);
+  }
+  if (api->get_int_value_ex(handle_, "Height", &height) == MV_OK) {
+    info.height = static_cast<int>(height.nCurValue);
+  }
+
+  MVCC_ENUMVALUE exposure_auto{};
+  MVCC_ENUMVALUE gain_auto{};
+  MVCC_FLOATVALUE exposure{};
+  MVCC_FLOATVALUE gain{};
+  if (api->get_enum_value(handle_, "ExposureAuto", &exposure_auto) == MV_OK) {
+    info.exposure_mode =
+      exposure_auto.nCurValue == MV_EXPOSURE_AUTO_MODE_OFF ? "manual" : "auto";
+    if (exposure_auto.nCurValue == MV_EXPOSURE_AUTO_MODE_ONCE) {
+      info.exposure_auto_mode = "once";
+    } else if (exposure_auto.nCurValue == MV_EXPOSURE_AUTO_MODE_CONTINUOUS) {
+      info.exposure_auto_mode = "continuous";
+    }
+  }
+  if (api->get_enum_value(handle_, "GainAuto", &gain_auto) == MV_OK) {
+    info.gain_mode = gain_auto.nCurValue == MV_GAIN_MODE_OFF ? "manual" : "auto";
+    if (gain_auto.nCurValue == MV_GAIN_MODE_ONCE) {
+      info.gain_auto_mode = "once";
+    } else if (gain_auto.nCurValue == MV_GAIN_MODE_CONTINUOUS) {
+      info.gain_auto_mode = "continuous";
+    }
+  }
+  if (api->get_float_value(handle_, "ExposureTime", &exposure) == MV_OK) {
+    info.exposure_time_us = exposure.fCurValue;
+    info.exposure_min_us = exposure.fMin;
+    info.exposure_max_us = exposure.fMax;
+  }
+  if (api->get_float_value(handle_, "Gain", &gain) == MV_OK) {
+    info.gain_value = gain.fCurValue;
+    info.gain_min = gain.fMin;
+    info.gain_max = gain.fMax;
+  }
+#endif
+  return info;
+}
+
 void MvsBackend::close()
 {
 #ifdef HIKROBOT_MVS_AVAILABLE
@@ -730,7 +1625,9 @@ void MvsBackend::close()
     std::string err;
     MvsApi * api = ensure_api(options_.sdk_lib_candidates, err);
     if (api != nullptr) {
-      (void)api->stop_grabbing(handle_);
+      if (grabbing_) {
+        (void)api->stop_grabbing(handle_);
+      }
       (void)api->close_device(handle_);
       (void)api->destroy_handle(handle_);
     }
@@ -738,6 +1635,8 @@ void MvsBackend::close()
 #endif
   handle_ = nullptr;
   buffer_.clear();
+  grabbing_ = false;
+  camera_info_.connected = false;
 }
 
 std::optional<Frame> MvsBackend::grab(double timeout_s)
@@ -784,7 +1683,39 @@ std::optional<Frame> MvsBackend::grab(double timeout_s)
             " but the payload buffer is only " + std::to_string(buffer_.size()) + " bytes");
   }
 
+  auto convert_frame = [&](MvGvspPixelType dst_pixel_type, std::size_t channels,
+      const std::string & encoding) {
+      const std::size_t dst_size =
+        checked_image_bytes(frame.width, frame.height, channels);
+      std::vector<uint8_t> converted(dst_size);
+      MV_CC_PIXEL_CONVERT_PARAM_EX cvt{};
+      cvt.nWidth = static_cast<unsigned int>(frame.width);
+      cvt.nHeight = static_cast<unsigned int>(frame.height);
+      cvt.enSrcPixelType = info.enPixelType;
+      cvt.pSrcData = buffer_.data();
+      cvt.nSrcDataLen = info.nFrameLen;
+      cvt.enDstPixelType = dst_pixel_type;
+      cvt.pDstBuffer = converted.data();
+      cvt.nDstBufferSize = static_cast<unsigned int>(converted.size());
+      const int crc = api->convert_pixel_type(handle_, &cvt);
+      if (crc != MV_OK) {
+        throw std::runtime_error("MV_CC_ConvertPixelTypeEx failed: " + mvs_error_text(crc));
+      }
+      if (cvt.nDstLen != dst_size) {
+        throw std::runtime_error(
+                "MV_CC_ConvertPixelTypeEx returned nDstLen=" +
+                std::to_string(cvt.nDstLen) + " expected=" + std::to_string(dst_size));
+      }
+      frame.encoding = encoding;
+      frame.data = std::move(converted);
+    };
+
+  const std::string desired_output = lower_value(options_.output_encoding);
   if (info.enPixelType == PixelType_Gvsp_Mono8) {
+    if (desired_output == "bgr8") {
+      throw std::runtime_error(
+              "camera returned Mono8 while image_encoding=bgr8 was explicitly required");
+    }
     const std::size_t expected = checked_image_bytes(frame.width, frame.height, 1U);
     if (info.nFrameLen < expected) {
       throw std::runtime_error(
@@ -793,47 +1724,53 @@ std::optional<Frame> MvsBackend::grab(double timeout_s)
     }
     frame.encoding = "mono8";
     frame.data.assign(buffer_.begin(), buffer_.begin() + static_cast<std::ptrdiff_t>(expected));
-  } else if (info.enPixelType == PixelType_Gvsp_BGR8_Packed ||
-    info.enPixelType == PixelType_Gvsp_RGB8_Packed)
-  {
+  } else if (info.enPixelType == PixelType_Gvsp_BGR8_Packed) {
     const std::size_t expected = checked_image_bytes(frame.width, frame.height, 3U);
     if (info.nFrameLen < expected) {
       throw std::runtime_error(
               "packed color frame is shorter than width*height*3: nFrameLen=" +
               std::to_string(info.nFrameLen) + " expected>=" + std::to_string(expected));
     }
-    frame.encoding =
-      info.enPixelType == PixelType_Gvsp_BGR8_Packed ? "bgr8" : "rgb8";
-    frame.data.assign(buffer_.begin(), buffer_.begin() + static_cast<std::ptrdiff_t>(expected));
-  } else {
-    // Non-direct formats (Bayer, YUV, packed mono...) are converted using the
-    // dimensions reported for this exact frame, never hard-coded dimensions.
-    const bool is_color =
-      is_bayer_pixel_type(static_cast<unsigned int>(info.enPixelType));
-    const std::size_t dst_size =
-      checked_image_bytes(frame.width, frame.height, is_color ? 3U : 1U);
-    std::vector<uint8_t> converted(dst_size);
-    MV_CC_PIXEL_CONVERT_PARAM_EX cvt{};
-    cvt.nWidth = static_cast<unsigned int>(frame.width);
-    cvt.nHeight = static_cast<unsigned int>(frame.height);
-    cvt.enSrcPixelType = info.enPixelType;
-    cvt.pSrcData = buffer_.data();
-    cvt.nSrcDataLen = info.nFrameLen;
-    cvt.enDstPixelType =
-      is_color ? PixelType_Gvsp_BGR8_Packed : PixelType_Gvsp_Mono8;
-    cvt.pDstBuffer = converted.data();
-    cvt.nDstBufferSize = static_cast<unsigned int>(converted.size());
-    const int crc = api->convert_pixel_type(handle_, &cvt);
-    if (crc != MV_OK) {
-      throw std::runtime_error("MV_CC_ConvertPixelTypeEx failed: " + mvs_error_text(crc));
+    if (desired_output == "mono8") {
+      convert_frame(PixelType_Gvsp_Mono8, 1U, "mono8");
+    } else {
+      frame.encoding = "bgr8";
+      frame.data.assign(buffer_.begin(), buffer_.begin() + static_cast<std::ptrdiff_t>(expected));
     }
-    if (cvt.nDstLen != dst_size) {
+  } else if (info.enPixelType == PixelType_Gvsp_RGB8_Packed) {
+    const std::size_t expected = checked_image_bytes(frame.width, frame.height, 3U);
+    if (info.nFrameLen < expected) {
       throw std::runtime_error(
-              "MV_CC_ConvertPixelTypeEx returned nDstLen=" +
-              std::to_string(cvt.nDstLen) + " expected=" + std::to_string(dst_size));
+              "RGB8 frame is shorter than width*height*3: nFrameLen=" +
+              std::to_string(info.nFrameLen) + " expected>=" + std::to_string(expected));
     }
-    frame.encoding = is_color ? "bgr8" : "mono8";
-    frame.data = std::move(converted);
+    const std::vector<uint8_t> rgb(
+      buffer_.begin(), buffer_.begin() + static_cast<std::ptrdiff_t>(expected));
+    if (desired_output == "mono8") {
+      convert_frame(PixelType_Gvsp_Mono8, 1U, "mono8");
+    } else {
+      frame.encoding = "bgr8";
+      frame.data = rgb8_to_bgr8(rgb, frame.width, frame.height);
+    }
+  } else if (is_bayer_pixel_type(static_cast<unsigned int>(info.enPixelType))) {
+    // Bayer 转换使用当前帧的真实宽高，绝不使用固定分辨率。
+    if (desired_output == "mono8") {
+      convert_frame(PixelType_Gvsp_Mono8, 1U, "mono8");
+    } else {
+      convert_frame(PixelType_Gvsp_BGR8_Packed, 3U, "bgr8");
+    }
+  } else {
+    if (desired_output == "bgr8") {
+      convert_frame(PixelType_Gvsp_BGR8_Packed, 3U, "bgr8");
+    } else if (desired_output == "mono8") {
+      convert_frame(PixelType_Gvsp_Mono8, 1U, "mono8");
+    } else {
+      try {
+        convert_frame(PixelType_Gvsp_BGR8_Packed, 3U, "bgr8");
+      } catch (const std::exception &) {
+        convert_frame(PixelType_Gvsp_Mono8, 1U, "mono8");
+      }
+    }
   }
 
   if (!frame.is_well_formed()) {

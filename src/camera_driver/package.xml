@@ -2,11 +2,11 @@
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
   <name>camera_driver</name>
-  <version>0.2.0</version>
+  <version>0.3.0</version>
   <description>
-    Hikrobot (Hikvision Machine Vision) GigE / USB3 Vision camera adapter for ROS 2 Jazzy.
-    Real MVS acquisition, honest uncalibrated CameraInfo, stream diagnostics,
-    and clean SDK lifecycle. C++17 / rclcpp.
+    Hikrobot MVS camera adapter for ROS 2 Jazzy. Real acquisition, automatic
+    color/mono output selection, runtime exposure/gain control, reconnect,
+    zero-intrinsics CameraInfo and diagnostics. C++17 / rclcpp.
   </description>
   <maintainer email="design3-team3@proton.me">team3</maintainer>
   <license>Apache-2.0</license>
@@ -16,7 +16,6 @@
   <depend>rclcpp</depend>
   <depend>sensor_msgs</depend>
   <depend>diagnostic_msgs</depend>
-  <depend>yaml_cpp_vendor</depend>
 
   <test_depend>ament_cmake_gtest</test_depend>
 

@@ -15,9 +15,6 @@ find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(diagnostic_msgs REQUIRED)
-find_package(yaml_cpp_vendor REQUIRED)
-find_package(yaml-cpp REQUIRED)
-find_package(OpenCV REQUIRED COMPONENTS core imgcodecs imgproc)
 find_package(Threads REQUIRED)
 
 # The Hikrobot MVS SDK is optional for package builds. The real camera backend
@@ -52,13 +49,11 @@ add_library(camera_driver_core
   src/camera_backend.cpp
   src/stream_health.cpp
   src/mvs_backend.cpp
-  src/camera_info_factory.cpp
   src/camera_node.cpp
 )
 target_include_directories(camera_driver_core PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>
-  ${OpenCV_INCLUDE_DIRS}
   ${HIKROBOT_MVS_INCLUDE_DIR}
 )
 if(HIKROBOT_MVS_INCLUDE_DIR)
@@ -73,8 +68,6 @@ target_link_libraries(camera_driver_core PUBLIC
   rclcpp::rclcpp
   sensor_msgs::sensor_msgs
   diagnostic_msgs::diagnostic_msgs
-  yaml-cpp
-  ${OpenCV_LIBS}
   ${CMAKE_DL_LIBS}
   Threads::Threads
 )
@@ -95,11 +88,11 @@ if(BUILD_TESTING)
   target_link_libraries(test_stream_health camera_driver_core)
 
 
-  ament_add_gtest(test_camera_info_factory test/test_camera_info_factory.cpp)
-  target_link_libraries(test_camera_info_factory camera_driver_core)
-
   ament_add_gtest(test_mvs_backend test/test_mvs_backend.cpp)
   target_link_libraries(test_mvs_backend camera_driver_core)
+
+  ament_add_gtest(test_mvs_controls test/test_mvs_controls.cpp)
+  target_link_libraries(test_mvs_controls camera_driver_core)
 
   ament_add_gtest(test_camera_node test/test_camera_node.cpp)
   target_link_libraries(test_camera_node camera_driver_core)

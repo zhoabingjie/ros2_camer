@@ -23,6 +23,7 @@
 #define HIKROBOT_CAMERA_ROS2__CAMERA_NODE_HPP_
 
 #include <atomic>
+#include <cstdint>
 #include <condition_variable>
 #include <memory>
 #include <mutex>
@@ -37,7 +38,6 @@
 #include "sensor_msgs/msg/image.hpp"
 
 #include "camera_driver/camera_backend.hpp"
-#include "camera_driver/camera_info_factory.hpp"
 #include "camera_driver/mvs_backend.hpp"
 #include "camera_driver/stream_health.hpp"
 
@@ -58,7 +58,11 @@ public:
   void stop();
 
   const StreamHealthMonitor & health() const {return *health_;}
-  const std::string & frame_id() const {return config_.frame_id;}
+  std::string frame_id() const
+  {
+    std::lock_guard<std::mutex> lock(config_mutex_);
+    return config_.frame_id;
+  }
 
   /// @brief Topics this node advertises.
   ///
@@ -73,7 +77,6 @@ private:
     std::string image_topic{"/camera/image_raw"};
     std::string camera_info_topic{"/camera/camera_info"};
     std::string status_topic{"/vision/status"};
-    std::string calibration_file;
     double stream_timeout_s{2.0};
     double grab_timeout_s{0.2};
     double reconnect_backoff_s{1.0};
@@ -81,12 +84,13 @@ private:
     std::string qos_reliability{"best_effort"};
     int qos_depth{5};
     bool require_camera_at_startup{true};
+    int reconnect_after_misses{10};
     MvsBackendOptions mvs;
   };
 
   void declare_parameters();
   Config read_config();
-  void load_calibration(const std::string & path);
+  void register_parameter_callback();
   std::shared_ptr<CameraBackend> make_backend();
   void close_backend();
   void acquire_loop();
@@ -100,20 +104,29 @@ private:
   // using the backend, so reconnecting cannot destroy it mid-call.
   std::shared_ptr<CameraBackend> backend_;
   mutable std::mutex backend_mutex_;
+  /// 相同启动/重连错误只打印一次，避免相机未插入时每秒刷屏。
+  std::string last_backend_error_;
+  uint64_t backend_error_retries_{0};
+  /// 串行化 MVS handle 操作：grab、动态参数、关闭/重连不能同时访问设备。
+  mutable std::mutex camera_io_mutex_;
+  /// 保护配置快照；重连时读取的曝光/增益等设置不能被参数回调撕裂。
+  mutable std::mutex config_mutex_;
+  uint64_t config_generation_{0};
+  std::atomic<double> grab_timeout_s_{0.2};
+  std::atomic<double> reconnect_backoff_s_{1.0};
+  std::atomic<int> reconnect_after_misses_{10};
   std::thread worker_;
   std::atomic<bool> shutdown_{false};
   std::mutex wakeup_mutex_;
   std::condition_variable wakeup_;
 
-  std::optional<Calibration> calibration_;
-  std::optional<std::string> calibration_problem_;
-  mutable std::mutex calibration_mutex_;
   std::optional<StreamState> last_state_;
 
   rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr image_pub_;
   rclcpp::Publisher<sensor_msgs::msg::CameraInfo>::SharedPtr info_pub_;
   rclcpp::Publisher<diagnostic_msgs::msg::DiagnosticArray>::SharedPtr status_pub_;
   rclcpp::TimerBase::SharedPtr watchdog_;
+  rclcpp::node_interfaces::OnSetParametersCallbackHandle::SharedPtr parameter_callback_;
 
   std::vector<std::string> advertised_topics_;
 };

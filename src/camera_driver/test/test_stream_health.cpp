@@ -116,6 +116,15 @@ TEST(StreamHealth, ReopenCounterIsReported)
   EXPECT_EQ(monitor.snapshot().backend_reopens, 2u);
 }
 
+TEST(StreamHealth, StallTimeoutCanBeChangedOnline)
+{
+  StreamHealthMonitor monitor(1.0);
+  EXPECT_DOUBLE_EQ(monitor.stall_timeout_s(), 1.0);
+  monitor.set_stall_timeout_s(2.5);
+  EXPECT_DOUBLE_EQ(monitor.stall_timeout_s(), 2.5);
+  EXPECT_THROW(monitor.set_stall_timeout_s(0.0), std::invalid_argument);
+}
+
 TEST(StreamHealth, InvalidConstructionIsRejected)
 {
   EXPECT_THROW(StreamHealthMonitor(0.0), std::invalid_argument);

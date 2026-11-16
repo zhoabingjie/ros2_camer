@@ -125,7 +125,12 @@ TEST_F(CameraNodeTest, PublishesMvsStreamDiagnostics)
   std::map<std::string, std::string> values;
   for (const auto & kv : status.values) {values[kv.key] = kv.value;}
   EXPECT_EQ(values["backend"], "mvs");
-  EXPECT_EQ(values["calibrated"], "False");
+  EXPECT_EQ(values["camera_connected"], "False");
+  EXPECT_EQ(values["image_encoding"], "auto");
+  EXPECT_EQ(values["exposure_mode"], "auto");
+  EXPECT_EQ(values["gain_mode"], "auto");
+  EXPECT_NE(values.count("reconnect_count"), 0u);
+  EXPECT_NE(values.count("last_error"), 0u);
   EXPECT_NE(values.count("describe"), 0u);
 }
 
@@ -146,6 +151,68 @@ TEST_F(CameraNodeTest, StartupFailsWhenRealCameraIsRequiredButUnavailable)
     const std::string message = exc.what();
     EXPECT_NE(message.find("required MVS camera"), std::string::npos) << message;
   }
+}
+
+TEST_F(CameraNodeTest, DynamicParametersAcceptManualZeroGainAndRejectInvalidValues)
+{
+  auto node = std::make_shared<CameraNode>(retryOptions());
+
+  auto result = node->set_parameter(rclcpp::Parameter("exposure_mode", "manual"));
+  EXPECT_TRUE(result.successful) << result.reason;
+  result = node->set_parameter(rclcpp::Parameter("exposure_time_us", 8000.0));
+  EXPECT_TRUE(result.successful) << result.reason;
+  result = node->set_parameter(rclcpp::Parameter("gain_mode", "manual"));
+  EXPECT_TRUE(result.successful) << result.reason;
+  result = node->set_parameter(rclcpp::Parameter("gain_value", 0.0));
+  EXPECT_TRUE(result.successful) << result.reason;
+
+  result = node->set_parameter(rclcpp::Parameter("frame_id", "base_link"));
+  EXPECT_TRUE(result.successful) << result.reason;
+  EXPECT_EQ(node->frame_id(), "base_link");
+
+  result = node->set_parameter(rclcpp::Parameter("stream_timeout_s", 1.5));
+  EXPECT_TRUE(result.successful) << result.reason;
+  EXPECT_DOUBLE_EQ(node->health().stall_timeout_s(), 1.5);
+
+  result = node->set_parameter(rclcpp::Parameter("grab_timeout_s", 0.3));
+  EXPECT_TRUE(result.successful) << result.reason;
+  result = node->set_parameter(rclcpp::Parameter("reconnect_backoff_s", 0.7));
+  EXPECT_TRUE(result.successful) << result.reason;
+  result = node->set_parameter(rclcpp::Parameter("reconnect_after_misses", 3));
+  EXPECT_TRUE(result.successful) << result.reason;
+  result = node->set_parameter(rclcpp::Parameter("mvs_width", 640));
+  EXPECT_TRUE(result.successful) << result.reason;
+  result = node->set_parameter(rclcpp::Parameter("mvs_height", 480));
+  EXPECT_TRUE(result.successful) << result.reason;
+
+  EXPECT_EQ(node->get_parameter("grab_timeout_s").as_double(), 0.3);
+  EXPECT_EQ(node->get_parameter("reconnect_backoff_s").as_double(), 0.7);
+  EXPECT_EQ(node->get_parameter("reconnect_after_misses").as_int(), 3);
+  EXPECT_EQ(node->get_parameter("mvs_width").as_int(), 640);
+  EXPECT_EQ(node->get_parameter("mvs_height").as_int(), 480);
+
+  result = node->set_parameter(rclcpp::Parameter("stream_timeout_s", 0.0));
+  EXPECT_FALSE(result.successful);
+  result = node->set_parameter(rclcpp::Parameter("mvs_width", -1));
+  EXPECT_FALSE(result.successful);
+  result = node->set_parameter(rclcpp::Parameter("reconnect_after_misses", 0));
+  EXPECT_FALSE(result.successful);
+
+  result = node->set_parameter(rclcpp::Parameter("exposure_mode", "invalid"));
+  EXPECT_FALSE(result.successful);
+  EXPECT_EQ(node->get_parameter("exposure_mode").as_string(), "manual");
+
+  result = node->set_parameter(rclcpp::Parameter("image_encoding", "mono8"));
+  EXPECT_TRUE(result.successful) << result.reason;
+  EXPECT_EQ(node->get_parameter("image_encoding").as_string(), "mono8");
+
+  result = node->set_parameter(rclcpp::Parameter("image_encoding", "invalid"));
+  EXPECT_FALSE(result.successful);
+  EXPECT_EQ(node->get_parameter("image_encoding").as_string(), "mono8");
+
+  result = node->set_parameter(rclcpp::Parameter("mvs_pixel_format", "Mono8"));
+  EXPECT_TRUE(result.successful) << result.reason;
+  node->stop();
 }
 
 TEST(CameraFrameConversion, MapsEveryField)
